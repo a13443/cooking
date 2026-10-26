@@ -15,6 +15,7 @@
 - `loanLimit.js`: 한도 계산 함수 (LTV, 가격 구간 상한, DSR, 대출 불가·경고 조건)
 - `tests/loanLimit.test.js`: 계산 테스트 (`npm test` 또는 `node --test tests/loanLimit.test.js`)
 - `data/auction_rates.csv`, `data/auction_rates.json`: 시도 × 용도 매각가율 표
+- `data/trades.js`, `scripts/fetch_trades.py`: 아파트 실거래가 표와 이를 만드는 스크립트 (아래 '실거래가 받기')
 - `scripts/build_rates.py`: 법원경매정보 '용도별 매각통계' 엑셀로 위 표를 다시 만들고 `index.html` 데이터도 갱신
 
 ## 데이터 기준
@@ -35,6 +36,20 @@
 - 인쇄·PDF 저장 시 산정표를 먼저 한 열로 출력
 - 규정 기준일(`effectiveDate`)에서 6개월이 지나면 확인 경고
 - 최우선변제금은 주택·상가건물 임대차보호법 시행령의 지역별 금액. 차감액은 예상 낙찰가의 1/2을 넘지 않음
+
+## 실거래가 받기 (선택)
+
+아파트 실거래가를 미리 받아 두면 시세 칸 아래 '실거래가로 채우기'에서 단지·전용면적별 최근 12개월 중위가와 최근 거래가를 골라 넣을 수 있습니다.
+
+1. 공공데이터포털(data.go.kr)에서 '국토교통부_아파트 매매 실거래가 자료' 활용신청 → 일반 인증키(Decoding) 복사
+2. 실행 (코드를 주지 않으면 서울 25개 구, 경기 등은 `코드=이름`으로 지정)
+
+```
+python scripts/fetch_trades.py --key <인증키>
+python scripts/fetch_trades.py --key <인증키> 11680 11650 41590=화성시 41463=용인시기흥구
+```
+
+결과는 `data/trades.js`에 저장됩니다(표준 라이브러리만 사용, 해제 거래 제외). 인증키는 파일에 저장되지 않습니다.
 
 ## 표 다시 만들기
 

@@ -2,7 +2,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const rules = require("../loanRules.js");
-const { calcLoanLimit, classifyLocation, annualPayment, principalFromAnnual } = require("../loanLimit.js");
+const { calcLoanLimit, classifyLocation, annualPayment, principalFromAnnual, suggestions } = require("../loanLimit.js");
 
 // 기본 입력: 서울 아파트 무주택 주택구입, 소득·DSR 여유 충분, 낙찰가율 90%, 방공제 없음
 function input(over = {}) {
@@ -197,6 +197,39 @@ test("낙찰가율이 LTV보다 낮으면 낙찰가율이 결정 (비주택 임�
   const r = calcLoanLimit(input({ region: "제주", use: "임야", price: 3e8, auctionRate: 0.504, depositTier: "other" }), rules);
   assert.equal(r.binding, "auction");
   near(r.finalLimit, 151_200_000);
+});
+
+test("선순위 채권 차감: 서울 14억 LTV 5.6억 − 선순위 2억 = 3.6억", () => {
+  const r = calcLoanLimit(input({ seniorDebt: 2e8 }), rules);
+  assert.equal(r.seniorDebt, 2e8);
+  assert.equal(r.collateralLimit, 3.6e8);
+  assert.equal(r.finalLimit, 3.6e8);
+  assert.equal(r.binding, "ltv");
+});
+
+test("선순위 채권이 담보인정액 이상이면 0과 경고", () => {
+  const r = calcLoanLimit(input({ seniorDebt: 6e8 }), rules);
+  assert.equal(r.finalLimit, 0);
+  assert.ok(r.warnings.some((m) => m.includes("선순위")));
+});
+
+test("역산: DSR이 결정할 때 필요 소득·만기·고정금리·비은행 제안", () => {
+  const base = input({ annualIncome: 5e7, years: 30 });
+  const before = calcLoanLimit(base, rules).finalLimit;
+  const tips = suggestions(base, rules);
+  const by = Object.fromEntries(tips.map((t) => [t.key, t]));
+  assert.deepEqual(Object.keys(by).sort(), ["fixed", "income", "nonBank", "years"]);
+  // 제안 소득으로 다시 계산하면 담보 기준 한도(5.6억)까지 나온다
+  assert.equal(by.income.amount, 5.6e8);
+  assert.equal(calcLoanLimit({ ...base, annualIncome: by.income.value }, rules).finalLimit, 5.6e8);
+  for (const k of ["years", "fixed", "nonBank"]) assert.ok(by[k].amount > before, k);
+  assert.equal(by.years.value, rules.maxLoanYears);
+});
+
+test("역산: 기존 대출 상환 제안, DSR이 결정하지 않으면 제안 없음", () => {
+  const tips = suggestions(input({ annualIncome: 8e7, existingAnnualPayment: 1e7 }), rules);
+  assert.ok(tips.some((t) => t.key === "repayExisting"));
+  assert.deepEqual(suggestions(input(), rules), []);
 });
 
 test("기존 예시: 1억 × min(70%, 70%) − 2,500만 = 4,500만", () => {

@@ -120,6 +120,12 @@ button.preset:hover { background: var(--accent-soft); }
 .msgs li { font-size: 13px; border-radius: 6px; padding: 8px 12px; }
 .msgs li.block { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 .msgs li.warn { background: var(--warn-soft); color: var(--warn); }
+.tips { display: grid; gap: 8px; border: 1px dashed var(--accent); border-radius: 8px; padding: 12px; }
+.tips h3 { font-size: 13px; margin: 0; display: grid; gap: 2px; }
+.tips ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.tips li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; font-size: 13px; }
+.tips li .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 500; text-align: right; }
+.tips li .d { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
 .disclaimer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; max-width: 80ch; }
 .alert { font-size: 13px; background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 8px 12px; margin: 0; }
 
@@ -187,6 +193,11 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           <input id="price" class="money" type="text" inputmode="numeric" autocomplete="off">
           <span class="hint" id="price-kor"></span>
           <span class="hint">공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다. 자동 조회는 2단계에서 붙일 예정입니다.</span>
+        </div>
+        <div class="field">
+          <label for="senior">선순위 채권 (원)</label>
+          <input id="senior" class="money" type="text" inputmode="numeric" autocomplete="off">
+          <span class="hint">등기부등본 을구에 이미 잡힌 근저당의 채권최고액 합계입니다. 기존 대출을 갚고 새로 받는 대환이면 비워 두세요. 기존 대출의 상환액은 아래 DSR의 '기존 대출 연간 원리금'에 넣습니다.</span>
         </div>
       </div>
 
@@ -337,6 +348,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           <tr><td class="op"></td><td>주택 시가<span class="sub" id="l-price-sub"></span></td><td class="amt" id="l-price"></td></tr>
           <tr><td class="op">×</td><td>적용 비율 = min(낙찰가율, LTV)<span class="sub" id="l-rate-sub"></span></td><td class="amt" id="l-rate"></td></tr>
           <tr><td class="op">−</td><td>소액임차보증금<span class="sub" id="l-ded-sub"></span></td><td class="amt" id="l-ded"></td></tr>
+          <tr><td class="op">−</td><td>선순위 채권<span class="sub">기존 근저당 채권최고액</span></td><td class="amt" id="l-senior"></td></tr>
         </tbody>
       </table>
       <p class="alert" id="cap-alert" hidden></p>
@@ -350,7 +362,11 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         <span><span class="total-amt" id="l-total"></span><span class="won" id="l-total-kor"></span></span>
       </div>
       <ul class="msgs" id="msgs"></ul>
-      <p class="note">선순위 채권과 감정평가 결과는 반영하지 않았습니다.</p>
+      <div class="tips" id="tips" hidden>
+        <h3>한도를 늘리려면 <span class="hint">DSR이 한도를 정했습니다. 조건을 하나씩만 바꿨을 때의 한도입니다.</span></h3>
+        <ul id="tips-list"></ul>
+      </div>
+      <p class="note">감정평가 결과는 반영하지 않았습니다.</p>
     </div>
   </div>
 
@@ -473,8 +489,8 @@ function render() {
   $("district-field").hidden = !Array.isArray(regulatedList);
   const homes = $("homes").value;
   $("first-time").disabled = homes !== "noHome";
-  const r = LoanLimit.calcLoanLimit({
-    region, district: $("district").value, use, price, auctionRate: rate / 100,
+  const loanInput = {
+    region, district: $("district").value, use, price, auctionRate: rate / 100, seniorDebt: parseMoney($("senior").value),
     ltvOverride: $("ltv-override").checked ? (Number($("ltv-manual").value) || 0) / 100 : null,
     homes, firstTimeBuyer: $("first-time").checked, purpose: $("purpose").value,
     annualIncome: parseMoney($("income").value), existingAnnualPayment: parseMoney($("existing").value),
@@ -484,7 +500,8 @@ function render() {
     jeonse: { has: $("jeonse").checked, inCapitalOrRegulated: $("jeonse-capital").checked,
       policy: $("jeonse-policy").checked, annualInterest: parseMoney($("jeonse-interest").value) },
     depositTier: tier.id, houseUnits: hu, shopUnits: su,
-  }, RULES);
+  };
+  const r = LoanLimit.calcLoanLimit(loanInput, RULES);
 
   $("location-chip").textContent = r.locationName;
   $("location-chip").classList.toggle("warn", r.location === "regulated");
@@ -504,6 +521,7 @@ function render() {
   if (su) parts.push(`상가 ${su}호 × ${korMoney(tier.shop)}`);
   $("l-ded-sub").textContent = (parts.join(" + ") || "임차 호실 없음") + ` · ${tier.name}`;
   $("l-ded").textContent = r.deposit.deduction ? fmt(r.deposit.deduction) : "0";
+  $("l-senior").textContent = fmt(r.seniorDebt);
   const alert = $("cap-alert");
   alert.hidden = r.deposit.raw <= r.deposit.cap || r.deposit.raw === 0;
   alert.textContent = `호수 기준 차감액 ${korMoney(r.deposit.raw)}이 예상 낙찰가의 절반(${korMoney(r.deposit.cap)})을 넘어 상한까지만 뺐습니다.`;
@@ -514,13 +532,28 @@ function render() {
     $(id + "-v").textContent = amount == null ? "해당 없음" : fmt(amount);
     $(id + "-d").textContent = desc;
   };
-  setLimit("lim-collateral", r.collateralLimit, `시가 × ${(r.ratio * 100).toFixed(1)}% − 소액임차보증금`, r.binding === "ltv" || r.binding === "auction");
+  setLimit("lim-collateral", r.collateralLimit, `시가 × ${(r.ratio * 100).toFixed(1)}% − 소액임차보증금${r.seniorDebt ? " − 선순위 채권" : ""}`, r.binding === "ltv" || r.binding === "auction");
   setLimit("lim-cap", r.cap ? r.cap.cap : null, r.cap ? r.cap.why : "수도권·규제지역 주택담보대출에만 적용", r.binding === "cap");
   setLimit("lim-dsr", r.dsr.excluded ? null : Math.max(0, r.dsr.limit), r.dsr.why, r.binding === "dsr");
 
   $("l-total").textContent = fmt(r.finalLimit);
   $("l-total-kor").textContent = r.binding === "blocked" ? "대출 불가" : korMoney(r.finalLimit);
   $("msgs").innerHTML = [...r.blocks.map((m) => `<li class="block">${m}</li>`), ...r.warnings.map((m) => `<li class="warn">${m}</li>`)].join("");
+
+  // 역산: DSR이 한도를 정했을 때 조건별로 바뀌는 한도
+  const TIP_TEXT = {
+    income: (t) => [`연소득 ${korMoney(t.value)} 이상`, "담보·상한 기준 한도까지 받으려면 필요한 소득입니다."],
+    years: (t) => [`만기 ${t.value}년`, "만기를 늘리면 연 상환액이 줄어듭니다. 은행에 따라 최장 만기가 다릅니다."],
+    fixed: () => ["고정금리 선택", "스트레스 금리가 붙지 않습니다. 실제 고정금리는 보통 변동금리보다 높으니 금리도 함께 확인하세요."],
+    repayExisting: () => ["기존 대출 전부 상환", "기존 대출 연간 원리금이 0일 때입니다."],
+    nonBank: () => ["비은행(2금융권)", "DSR 50% 기준입니다. 금리가 더 높을 수 있습니다."],
+  };
+  const tips = LoanLimit.suggestions(loanInput, RULES);
+  $("tips").hidden = !tips.length;
+  $("tips-list").innerHTML = tips.map((t) => {
+    const [label, desc] = TIP_TEXT[t.key](t);
+    return `<li><span>${label}</span><span class="v">${korMoney(t.amount)}</span><span class="d">${desc}</span></li>`;
+  }).join("");
 
   renderBars(region, use);
 }
@@ -561,6 +594,7 @@ function applyPreset(p) {
   $("purpose").value = p.purpose || "purchase";
   $("income").value = fmt(p.income ?? 6e7);
   $("existing").value = p.existing ? fmt(p.existing) : "";
+  $("senior").value = p.senior ? fmt(p.senior) : "";
   $("sector").value = p.sector || "bank";
   $("rate-type").value = "variable";
   $("loan-rate").value = p.loanRate ?? 4;
@@ -591,7 +625,7 @@ function init() {
   ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-mortgage", "jeonse-capital", "jeonse-policy"]
     .forEach((id) => $(id).addEventListener("change", render));
   ["loan-rate", "years"].forEach((id) => $(id).addEventListener("input", render));
-  ["income", "existing", "credit", "jeonse-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
+  ["senior", "income", "existing", "credit", "jeonse-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
     const n = parseMoney(e.target.value);
     e.target.value = n ? fmt(n) : "";
     render();

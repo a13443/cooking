@@ -75,7 +75,7 @@
    * input: { region, district, use, price, auctionRate(소수), ltvOverride(소수|null), homes, firstTimeBuyer, purpose,
    *   annualIncome, existingAnnualPayment, sector('bank'|'nonBank'), rateType, rate(소수), years, policyMortgage,
    *   creditLoanTotal, jeonse: { has, inCapitalOrRegulated, policy, annualInterest },
-   *   depositTier, houseUnits, shopUnits }
+   *   depositTier, houseUnits, shopUnits, seniorDebt(선순위 채권최고액) }
    */
   function calcLoanLimit(input, rules) {
     const location = classifyLocation(input.region, input.district, rules);
@@ -83,7 +83,7 @@
     const warnings = [];
     const blocks = [];
 
-    // 1) 담보 기준 한도 = 시가 × min(낙찰가율, LTV) − 소액임차보증금
+    // 1) 담보 기준 한도 = 시가 × min(낙찰가율, LTV) − 소액임차보증금 − 선순위 채권
     const ltv = ltvRatio(input, location, rules);
     const ltvApplied = input.ltvOverride != null ? input.ltvOverride : ltv.ratio;
     const ratio = Math.min(input.auctionRate, ltvApplied);
@@ -91,7 +91,9 @@
     const dep = smallDeposit(input, rules);
     const depositCap = expectedBid * rules.smallDepositCapRatio;
     const deduction = Math.min(dep.raw, depositCap);
-    const collateralLimit = Math.max(0, input.price * ratio - deduction);
+    const seniorDebt = Math.max(0, input.seniorDebt || 0);
+    const beforeSenior = Math.max(0, input.price * ratio - deduction);
+    const collateralLimit = Math.max(0, beforeSenior - seniorDebt);
 
     // 2) 가격 구간·이주비 상한
     const cap = amountCap(input, location, rules);
@@ -128,6 +130,7 @@
       warnings.push(`신용대출이 ${rules.creditLoanWarnThreshold / 1e8}억을 넘으면 신용대출 실행일부터 1년간 규제지역 주택 구입이 제한됩니다.`);
     if (jeonseInDsr) warnings.push(`1주택자의 수도권·규제지역 전세대출 이자(연 ${Math.round(input.jeonse.annualInterest || 0).toLocaleString("ko-KR")}원)를 DSR에 포함했습니다.`);
     if (dsr.limit !== null && dsr.limit <= 0) warnings.push("기존 대출 상환액만으로 DSR 한도를 넘어 추가 대출 여력이 없습니다.");
+    if (seniorDebt > 0 && seniorDebt >= beforeSenior) warnings.push("선순위 채권이 담보인정액 이상이라 이 담보로 추가 대출 여력이 없습니다.");
 
     // 5) 최종 한도와 결정 요인
     const candidates = [{ key: ratio < ltvApplied ? "auction" : "ltv", amount: collateralLimit }];
@@ -141,11 +144,35 @@
       ltv: { ratio: ltvApplied, policyRatio: ltv.ratio, why: ltv.why, overridden: input.ltvOverride != null },
       ratio, expectedBid,
       deposit: { tier: dep.tier, raw: dep.raw, cap: depositCap, deduction },
-      collateralLimit, cap, dsr: { ...dsr, ratio: dsrRatio, stress, existingAnnual: existing, jeonseInDsr },
+      seniorDebt, collateralLimit, cap, dsr: { ...dsr, ratio: dsrRatio, stress, existingAnnual: existing, jeonseInDsr },
       binding: blocks.length ? "blocked" : binding.key, finalLimit, warnings, blocks,
     };
   }
 
-  return { classifyLocation, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, calcLoanLimit,
+  /**
+   * DSR 때문에 한도가 정해졌을 때, 조건을 하나씩 바꾸면 한도가 얼마가 되는지 역산한다.
+   * 반환: [{ key, value, amount }] — key: income(value=필요 연소득) / years(value=만기) / fixed / repayExisting / nonBank
+   */
+  function suggestions(input, rules) {
+    const r = calcLoanLimit(input, rules);
+    if (r.binding !== "dsr") return [];
+    const tips = [];
+    const ceiling = Math.min(r.collateralLimit, r.cap ? r.cap.cap : Infinity); // DSR을 빼고 남는 한도
+    if (ceiling > r.finalLimit && input.years > 0) {
+      const need = (annualPayment(ceiling, input.rate + r.dsr.stress, input.years) + r.dsr.existingAnnual) / r.dsr.ratio;
+      tips.push({ key: "income", value: Math.ceil(need / 1e4) * 1e4, amount: ceiling });
+    }
+    const alt = (key, value, over) => {
+      const amount = calcLoanLimit({ ...input, ...over }, rules).finalLimit;
+      if (amount > r.finalLimit + 1) tips.push({ key, value, amount });
+    };
+    if (input.years < rules.maxLoanYears) alt("years", rules.maxLoanYears, { years: rules.maxLoanYears });
+    if (r.dsr.stress > 0) alt("fixed", null, { rateType: "fixed" });
+    if (input.existingAnnualPayment > 0) alt("repayExisting", null, { existingAnnualPayment: 0 });
+    if (input.sector === "bank") alt("nonBank", null, { sector: "nonBank" });
+    return tips;
+  }
+
+  return { classifyLocation, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, calcLoanLimit, suggestions,
     LOCATION_NAMES, HOMES_NAMES, PURPOSE_NAMES };
 });

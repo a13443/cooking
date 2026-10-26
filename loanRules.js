@@ -67,6 +67,7 @@
     // 혼합형·주기형은 일부만 반영되는 것으로 알려졌지만 비율을 확인하지 못해 보수적으로 1.0으로 둔다.
     stressRateTypeFactor: { variable: 1.0, mixed: 1.0, periodic: 1.0, fixed: 0.0 },
     policyMortgageExcludedFromDSR: true,
+    maxLoanYears: 40, // 역산 표시에 쓰는 최장 만기. 은행·지역에 따라 30년으로 제한하기도 함 (확인 필요)
 
     // 대출 불가·경고 조건
     jeonseLoanBlockApartmentPrice: 300000000, // 규제지역 이 금액 초과 아파트 구입 + 전세대출 보유 → 불가

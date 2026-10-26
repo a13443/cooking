@@ -1,9 +1,13 @@
 """법원경매정보 '용도별 매각통계' 엑셀을 읽어 시도 × 용도 매각가율 표를 만든다.
 
 사용법:
-    python scripts/build_rates.py <지역 파일 폴더> <전국 파일.xls>
+    python scripts/build_rates.py <1년차 폴더> <2년차 폴더> <3년차 폴더> <4년차 폴더> <5년차 폴더>
 
-지역 폴더에는 '용도별 매각통계 (N).xls' 파일 20개가 있어야 한다(N은 아래 REGION_FILES 순서).
+폴더는 오래된 해부터 최근 해 순서로 준다. 각 폴더에는 그 1년치 '용도별 매각통계 (N).xls'가 있다
+(N은 아래 REGION_FILES 순서, 번호 없는 파일은 0번). 특별자치도 시행 전처럼 없는 파일은 비워 둔다.
+
+낙찰가율 = max(5년 매각가율, 1년 50% + 3년 30% + 5년 20% 가중평균)
+각 기간 매각가율은 그 기간 매각가 합계 ÷ 감정가 합계이고, 3년·5년은 최근 1년을 포함한다.
 결과는 data/auction_rates.json, data/auction_rates.csv 로 저장하고,
 index.html 안의 RATES 데이터 블록도 함께 갱신한다.
 """
@@ -16,7 +20,9 @@ from pathlib import Path
 
 import xlrd
 
-PERIOD = "2026.01~2026.09"
+YEAR_LABELS = ["2021.10~2022.09", "2022.10~2023.09", "2023.10~2024.09", "2024.10~2025.09", "2025.10~2026.09"]
+WEIGHTS = {"1y": 0.5, "3y": 0.3, "5y": 0.2}
+PERIOD_YEARS = {"1y": 1, "3y": 3, "5y": 5}  # 최근 몇 해를 묶는지
 MIN_SOLD = 30  # 이 건수 미만이면 상위 분류 → 전국 순서로 대체
 
 # 다운로드 파일 끝 번호 → 시도. 행정구역 변경으로 나뉜 지역은 하나로 합친다.
@@ -80,47 +86,76 @@ def rate(r):
     return round(r["price"] / r["appr"] * 100, 1) if r and r["appr"] else None
 
 
-def main(region_dir, national_path):
-    grouped = {}
-    for path in glob.glob(str(Path(region_dir) / "*.xls")):
-        n = int(re.search(r"\((\d+)\)", path).group(1))
-        grouped.setdefault(REGION_FILES[n], []).append(read_sheet(path))
-    regions = {name: add(tables) for name, tables in grouped.items()}
-    national = read_sheet(national_path)
+def pick(rows, national, key, parent, label):
+    """그 기간의 지역 값을 고르고, 표본이 적으면 상위 분류 소계 → 전국 순으로 대체한다."""
+    own = rows.get(key)
+    if own and own["sold"] >= MIN_SOLD:
+        return {"rate": rate(own), "source": "지역", "n": int(own["sold"])}
+    if parent and rows.get(parent) and rows[parent]["sold"] >= MIN_SOLD:
+        p = rows[parent]
+        return {"rate": rate(p), "source": "지역 소계", "n": int(p["sold"])}
+    n = national[key]
+    return {"rate": rate(n), "source": "전국", "n": int(n["sold"])}
 
-    data = {"period": PERIOD, "minSold": MIN_SOLD, "uses": [u[1] for u in USES],
+
+def main(year_dirs):
+    if len(year_dirs) != len(YEAR_LABELS):
+        raise SystemExit(f"연도 폴더 {len(YEAR_LABELS)}개가 필요합니다")
+    years = []  # 해마다 {시도: [시트, ...]}
+    for d in year_dirs:
+        grouped = {}
+        for path in glob.glob(str(Path(d) / "*.xls")):
+            m = re.search(r"\((\d+)\)", path)
+            grouped.setdefault(REGION_FILES[int(m.group(1)) if m else 0], []).append(read_sheet(path))
+        years.append(grouped)
+
+    periods = {}
+    for pid, count in PERIOD_YEARS.items():
+        recent = years[-count:]
+        regions = {name: add([t for y in recent for t in y.get(name, [])]) for name in REGION_ORDER}
+        periods[pid] = {"regions": regions, "national": add(list(regions.values()))}
+
+    data = {"periods": {pid: f"{YEAR_LABELS[-c][:7]}~{YEAR_LABELS[-1][-7:]}" for pid, c in PERIOD_YEARS.items()},
+            "weights": WEIGHTS, "minSold": MIN_SOLD, "uses": [u[1] for u in USES],
             "regions": REGION_ORDER, "national": {}, "table": {}}
+
+    def combine(parts):
+        weighted = round(sum(WEIGHTS[pid] * parts[pid]["rate"] for pid in WEIGHTS), 1)
+        five = parts["5y"]["rate"]
+        return {"weighted": weighted, "applied": max(weighted, five),
+                "basis": "5년 매각가율" if five > weighted else "가중평균", "parts": parts}
+
     for key, label, _ in USES:
-        n = national[key]
-        data["national"][label] = {"rate": rate(n), "sold": int(n["sold"])}
+        parts = {}
+        for pid, per in periods.items():
+            n = per["national"][key]
+            parts[pid] = {"rate": rate(n), "source": "전국", "n": int(n["sold"])}
+        data["national"][label] = combine(parts)
 
     for name in REGION_ORDER:
-        rows = regions[name]
         data["table"][name] = {}
         for key, label, parent in USES:
-            own = rows.get(key)
-            cell = {"sold": int(own["sold"]) if own else 0, "rate": rate(own)}
-            if own and own["sold"] >= MIN_SOLD:
-                cell.update(applied=rate(own), source="지역", n=int(own["sold"]))
-            elif parent and rows.get(parent) and rows[parent]["sold"] >= MIN_SOLD:
-                p = rows[parent]
-                cell.update(applied=rate(p), source="지역 소계", n=int(p["sold"]))
-            else:
-                cell.update(applied=data["national"][label]["rate"], source="전국",
-                            n=data["national"][label]["sold"])
-            data["table"][name][label] = cell
+            parts = {pid: pick(per["regions"][name], per["national"], key, parent, label)
+                     for pid, per in periods.items()}
+            data["table"][name][label] = combine(parts)
 
     root = Path(__file__).resolve().parent.parent
     (root / "data/auction_rates.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     with open(root / "data/auction_rates.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["지역", "용도", "지역 매각건수", "지역 매각가율", "적용 매각가율", "적용 기준", "적용 표본건수"])
-        for name in REGION_ORDER:
+        head = ["지역", "용도"]
+        for pid in PERIOD_YEARS:
+            head += [f"{pid} 매각가율", f"{pid} 기준", f"{pid} 표본건수"]
+        w.writerow(head + ["가중평균", "적용 낙찰가율", "적용 근거"])
+        for name in REGION_ORDER + ["전국"]:
             for label in data["uses"]:
-                c = data["table"][name][label]
-                w.writerow([name, label, c["sold"], c["rate"] if c["rate"] is not None else "",
-                            c["applied"], c["source"], c["n"]])
+                c = data["national"][label] if name == "전국" else data["table"][name][label]
+                row = [name, label]
+                for pid in PERIOD_YEARS:
+                    p = c["parts"][pid]
+                    row += [p["rate"], p["source"], p["n"]]
+                w.writerow(row + [c["weighted"], c["applied"], c["basis"]])
 
     html = root / "index.html"
     if html.exists():
@@ -128,9 +163,9 @@ def main(region_dir, national_path):
         block = "/*RATES*/" + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "/*END*/"
         text = re.sub(r"/\*RATES\*/.*?/\*END\*/", lambda _: block, text, flags=re.S)
         html.write_text(text, encoding="utf-8")
-    print("저장 완료:", ", ".join(f"{k} {sum(1 for r in REGION_ORDER for u in data['uses'] if data['table'][r][u]['source']==k)}칸"
-                              for k in ("지역", "지역 소계", "전국")))
+    cells = [data["table"][r][u] for r in REGION_ORDER for u in data["uses"]]
+    print("저장 완료:", ", ".join(f"{b} {sum(c['basis'] == b for c in cells)}칸" for b in ("가중평균", "5년 매각가율")))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1:])

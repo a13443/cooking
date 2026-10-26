@@ -51,7 +51,7 @@
         nonPurchase: 0.70, // 생활안정자금·이주비 (확인 필요)
         firstTimeBuyer: 0.70,
       },
-      local: { default: 0.70, firstTimeBuyer: 0.80 },
+      local: { default: 0.70, firstTimeBuyer: 0.80, multiHome: 0.60 }, // 지방 다주택 60% (2차 자료 기준, 확인 필요)
       nonHousing: 0.70,
     },
 
@@ -63,10 +63,34 @@
       localStage3: 0.015, // localStage3Applied가 true일 때 지방에 쓸 값 (확인 필요)
     },
     stressRateFlags: { localStage3Applied: false },
-    // 금리 유형별 스트레스 금리 반영 비율. 고정금리는 미적용.
-    // 혼합형·주기형은 일부만 반영되는 것으로 알려졌지만 비율을 확인하지 못해 보수적으로 1.0으로 둔다.
-    stressRateTypeFactor: { variable: 1.0, mixed: 1.0, periodic: 1.0, fixed: 0.0 },
+    // 금리 유형별 스트레스 금리 반영 비율 (3단계, 2025.7.1~). 고정금리는 미적용.
+    // 실제로는 혼합형은 고정 기간, 주기형은 금리 변동 주기에 따라 달라질 수 있다.
+    stressRateTypeFactor: { variable: 1.0, mixed: 0.8, periodic: 0.4, fixed: 0.0 },
     policyMortgageExcludedFromDSR: true,
+
+    // 정책모기지 상품별 요건과 자체 한도 (2025.6.27 이후 계약분, 2차 자료 기준이라 확인 필요).
+    // 정책대출은 6억/4억/2억 가격 구간 상한 대신 상품 자체 한도를 쓴다. 소득은 부부합산 연소득.
+    // household: general(일반) / newlywed(신혼) / multiChild(2자녀 이상)
+    policyProducts: {
+      didimdol: {
+        name: "디딤돌대출",
+        homes: ["noHome"],
+        maxPrice: { general: 500000000, newlywed: 600000000, multiChild: 600000000 },
+        maxIncome: { general: 60000000, firstTimeBuyer: 70000000, newlywed: 85000000, multiChild: 70000000 },
+        cap: { general: 200000000, firstTimeBuyer: 240000000, newlywed: 320000000, multiChild: 320000000 },
+        ltv: { general: 0.70, firstTimeBuyer: 0.80, firstTimeBuyerCapital: 0.70 },
+      },
+      bogeumjari: {
+        name: "보금자리론",
+        homes: ["noHome", "conditional1Home"],
+        maxPrice: { general: 600000000, newlywed: 600000000, multiChild: 600000000 },
+        maxIncome: { general: 70000000, firstTimeBuyer: 70000000, newlywed: 85000000, multiChild: 100000000 },
+        cap: { general: 360000000, firstTimeBuyer: 420000000, newlywed: 360000000, multiChild: 360000000 },
+        ltv: { general: 0.70, firstTimeBuyer: 0.80, firstTimeBuyerCapital: 0.70 },
+      },
+    },
+
+    staleAfterMonths: 6, // 규정 기준일에서 이만큼 지나면 화면에 '규정 확인' 경고
     maxLoanYears: 40, // 역산 표시에 쓰는 최장 만기. 은행·지역에 따라 30년으로 제한하기도 함 (확인 필요)
 
     // 대출 불가·경고 조건

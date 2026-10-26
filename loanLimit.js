@@ -25,6 +25,7 @@
     const name = LOCATION_NAMES[location];
     if (location === "local") {
       if (first) return { ratio: L.local.firstTimeBuyer, why: `${name} 생애최초 구입` };
+      if (input.homes === "multiHome" && input.purpose === "purchase") return { ratio: L.local.multiHome, why: `${name} 다주택 주택구입` };
       return { ratio: L.local.default, why: name };
     }
     // 규제지역과 비규제 수도권은 보유 주택 수·목적별 표를 쓴다
@@ -42,6 +43,27 @@
     if (input.purpose !== "purchase") return null;
     const tier = rules.mortgageCap_regulated_purchase.find((t) => t.maxPrice === null || input.price <= t.maxPrice);
     return { cap: tier.cap, why: tier.maxPrice === null ? "주택구입 가격 구간 상한 (최상위 구간)" : `주택구입 가격 구간 상한 (시가 ${tier.maxPrice / 1e8}억 이하)` };
+  }
+
+  // 정책모기지 상품 요건 확인과 자체 한도·LTV. 일반·생애최초·가구 유형 중 해당하는 기준의 가장 너그러운 값을 쓴다.
+  function policyTerms(input, location, rules) {
+    const p = rules.policyProducts[input.policyProduct];
+    const household = input.household || "general";
+    const first = input.firstTimeBuyer && input.homes === "noHome";
+    const keys = ["general", first && "firstTimeBuyer", household !== "general" && household].filter(Boolean);
+    const best = (table) => Math.max(...keys.map((k) => table[k] ?? 0));
+    const blocks = [], warnings = [];
+    if (!rules.housingUses.includes(input.use) || input.purpose !== "purchase")
+      blocks.push(`${p.name}은 주택구입 목적의 주택 담보에만 쓸 수 있습니다.`);
+    if (!p.homes.includes(input.homes))
+      blocks.push(`${p.name}은 ${p.homes.map((h) => HOMES_NAMES[h]).join("·")} 차주만 받을 수 있습니다.`);
+    const maxPrice = p.maxPrice[household];
+    if (input.price > maxPrice) blocks.push(`${p.name}은 주택가격 ${maxPrice / 1e8}억 이하만 대상입니다.`);
+    const maxIncome = best(p.maxIncome);
+    if (!input.annualIncome) warnings.push(`${p.name} 소득 요건(부부합산 연 ${maxIncome / 1e4}만원 이하)을 확인하려면 연소득을 입력하세요.`);
+    else if (input.annualIncome > maxIncome) blocks.push(`${p.name} 소득 요건(부부합산 연 ${maxIncome / 1e4}만원 이하)을 넘습니다.`);
+    const ltv = first ? (location === "local" ? p.ltv.firstTimeBuyer : p.ltv.firstTimeBuyerCapital) : p.ltv.general;
+    return { name: p.name, cap: best(p.cap), ltv, blocks, warnings };
   }
 
   function stressRate(input, location, rules) {
@@ -73,7 +95,8 @@
 
   /**
    * input: { region, district, use, price, auctionRate(소수), ltvOverride(소수|null), homes, firstTimeBuyer, purpose,
-   *   annualIncome, existingAnnualPayment, sector('bank'|'nonBank'), rateType, rate(소수), years, policyMortgage,
+   *   annualIncome, existingAnnualPayment, sector('bank'|'nonBank'), rateType, rate(소수), years, policyMortgage(기타 정책모기지),
+   *   policyProduct('didimdol'|'bogeumjari'|''), household('general'|'newlywed'|'multiChild'),
    *   creditLoanTotal, jeonse: { has, inCapitalOrRegulated, policy, annualInterest },
    *   depositTier, houseUnits, shopUnits, seniorDebt(선순위 채권최고액) }
    */
@@ -84,7 +107,10 @@
     const blocks = [];
 
     // 1) 담보 기준 한도 = 시가 × min(낙찰가율, LTV) − 소액임차보증금 − 선순위 채권
-    const ltv = ltvRatio(input, location, rules);
+    const policy = input.policyProduct ? policyTerms(input, location, rules) : null;
+    let ltv = ltvRatio(input, location, rules);
+    // 정책모기지는 상품 LTV와 지역 규제 LTV 중 낮은 값 (보수적 가정)
+    if (policy && policy.ltv < ltv.ratio) ltv = { ratio: policy.ltv, why: `${policy.name} 상품 기준` };
     const ltvApplied = input.ltvOverride != null ? input.ltvOverride : ltv.ratio;
     const ratio = Math.min(input.auctionRate, ltvApplied);
     const expectedBid = input.price * input.auctionRate;
@@ -96,7 +122,8 @@
     const collateralLimit = Math.max(0, beforeSenior - seniorDebt);
 
     // 2) 가격 구간·이주비 상한
-    const cap = amountCap(input, location, rules);
+    // 정책모기지는 가격 구간 상한 대신 상품 자체 한도
+    const cap = policy ? { cap: policy.cap, why: `${policy.name} 자체 한도` } : amountCap(input, location, rules);
 
     // 3) DSR 한도
     const jeonseInDsr = rules.jeonseInterestInDsrForOneHome && input.jeonse && input.jeonse.has &&
@@ -106,7 +133,7 @@
     const stress = stressRate(input, location, rules);
     const dsrRatio = rules.dsrLimit[input.sector];
     let dsr;
-    if (input.policyMortgage && rules.policyMortgageExcludedFromDSR) {
+    if ((input.policyMortgage || policy) && rules.policyMortgageExcludedFromDSR) {
       dsr = { limit: null, excluded: true, why: "정책모기지는 DSR 계산 제외" };
     } else if (!input.annualIncome) {
       dsr = { limit: null, excluded: true, why: "연소득을 입력하면 DSR 한도를 계산합니다" };
@@ -117,6 +144,7 @@
     }
 
     // 4) 대출 불가·경고
+    if (policy) { blocks.push(...policy.blocks); warnings.push(...policy.warnings); }
     if (housing && location !== "local") {
       if (input.purpose === "purchase" && ltvApplied === 0 && input.ltvOverride == null)
         blocks.push(`${LOCATION_NAMES[location]} ${HOMES_NAMES[input.homes]} 차주의 주택구입 목적 대출은 불가합니다 (LTV 0%).`);

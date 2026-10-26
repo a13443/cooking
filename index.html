@@ -299,7 +299,26 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
             <input id="years" type="number" min="1" max="50" step="1">
           </div>
         </div>
-        <label class="check" for="policy-mortgage"><input type="checkbox" id="policy-mortgage"> 정책모기지 (디딤돌·보금자리론 등)</label>
+        <div class="row">
+          <div class="field">
+            <label for="policy-product">정책모기지</label>
+            <select id="policy-product">
+              <option value="">해당 없음</option>
+              <option value="didimdol">디딤돌대출</option>
+              <option value="bogeumjari">보금자리론</option>
+              <option value="other">기타 정책모기지</option>
+            </select>
+          </div>
+          <div class="field" id="household-field" hidden>
+            <label for="household">가구 유형</label>
+            <select id="household">
+              <option value="general">일반</option>
+              <option value="newlywed">신혼부부</option>
+              <option value="multiChild">2자녀 이상</option>
+            </select>
+          </div>
+        </div>
+        <span class="hint" id="policy-hint" hidden>정책모기지는 DSR 대신 상품의 소득·주택가격 요건과 자체 한도를 봅니다. 연소득은 부부합산으로 입력하세요. '기타'는 상품 한도 없이 DSR만 제외합니다.</span>
         <div class="field">
           <label for="credit">보유 신용대출 총액 (원)</label>
           <input id="credit" class="money" type="text" inputmode="numeric" autocomplete="off">
@@ -489,6 +508,9 @@ function render() {
   $("district-field").hidden = !Array.isArray(regulatedList);
   const homes = $("homes").value;
   $("first-time").disabled = homes !== "noHome";
+  const policyOn = $("policy-product").value !== "";
+  $("household-field").hidden = !RULES.policyProducts[$("policy-product").value];
+  $("policy-hint").hidden = !policyOn;
   const loanInput = {
     region, district: $("district").value, use, price, auctionRate: rate / 100, seniorDebt: parseMoney($("senior").value),
     ltvOverride: $("ltv-override").checked ? (Number($("ltv-manual").value) || 0) / 100 : null,
@@ -496,7 +518,9 @@ function render() {
     annualIncome: parseMoney($("income").value), existingAnnualPayment: parseMoney($("existing").value),
     sector: $("sector").value, rateType: $("rate-type").value,
     rate: (Number($("loan-rate").value) || 0) / 100, years: Number($("years").value) || 0,
-    policyMortgage: $("policy-mortgage").checked, creditLoanTotal: parseMoney($("credit").value),
+    policyMortgage: $("policy-product").value === "other",
+    policyProduct: RULES.policyProducts[$("policy-product").value] ? $("policy-product").value : "",
+    household: $("household").value, creditLoanTotal: parseMoney($("credit").value),
     jeonse: { has: $("jeonse").checked, inCapitalOrRegulated: $("jeonse-capital").checked,
       policy: $("jeonse-policy").checked, annualInterest: parseMoney($("jeonse-interest").value) },
     depositTier: tier.id, houseUnits: hu, shopUnits: su,
@@ -599,7 +623,7 @@ function applyPreset(p) {
   $("rate-type").value = "variable";
   $("loan-rate").value = p.loanRate ?? 4;
   $("years").value = p.years ?? 30;
-  $("policy-mortgage").checked = false;
+  $("policy-product").value = ""; $("household").value = "general";
   $("credit").value = "";
   $("jeonse").checked = false; $("jeonse-fields").hidden = true;
   render();
@@ -622,7 +646,7 @@ function init() {
   $("use").addEventListener("change", () => { setUseDefaults(); render(); });
   $("tier").addEventListener("change", render);
   ["house-units", "shop-units", "rate-manual", "ltv-manual"].forEach((id) => $(id).addEventListener("input", render));
-  ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-mortgage", "jeonse-capital", "jeonse-policy"]
+  ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-product", "household", "jeonse-capital", "jeonse-policy"]
     .forEach((id) => $(id).addEventListener("change", render));
   ["loan-rate", "years"].forEach((id) => $(id).addEventListener("input", render));
   ["senior", "income", "existing", "credit", "jeonse-interest"].forEach((id) => $(id).addEventListener("input", (e) => {

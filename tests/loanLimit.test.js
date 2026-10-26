@@ -232,6 +232,53 @@ test("역산: 기존 대출 상환 제안, DSR이 결정하지 않으면 제안 
   assert.deepEqual(suggestions(input(), rules), []);
 });
 
+test("금리 유형별 스트레스 반영: 혼합형 80%, 주기형 40% (수도권 3% 기준)", () => {
+  near(calcLoanLimit(input({ rateType: "mixed" }), rules).dsr.stress, 0.024, 1e-12);
+  near(calcLoanLimit(input({ rateType: "periodic" }), rules).dsr.stress, 0.012, 1e-12);
+});
+
+test("지방 다주택자 주택구입: LTV 60%", () => {
+  const r = calcLoanLimit(input({ region: "부산", price: 3e8, homes: "multiHome", depositTier: "metro" }), rules);
+  assert.equal(r.ltv.ratio, 0.60);
+  assert.equal(r.finalLimit, 1.8e8);
+});
+
+test("디딤돌 생애최초: 인천 4억, 연소득 6,500만 → 자체 한도 2.4억, DSR 제외", () => {
+  const r = calcLoanLimit(input({ region: "인천", price: 4e8, firstTimeBuyer: true, annualIncome: 6.5e7,
+    policyProduct: "didimdol", depositTier: "dense" }), rules);
+  assert.deepEqual(r.blocks, []);
+  assert.equal(r.ltv.ratio, 0.70);
+  assert.equal(r.cap.cap, 2.4e8);
+  assert.equal(r.dsr.excluded, true);
+  assert.equal(r.finalLimit, 2.4e8);
+  assert.equal(r.binding, "cap");
+});
+
+test("디딤돌 요건 미달: 주택가격 초과·소득 초과·유주택은 불가", () => {
+  const base = { region: "인천", price: 4e8, annualIncome: 5e7, policyProduct: "didimdol", depositTier: "dense" };
+  assert.equal(calcLoanLimit(input({ ...base, price: 5.5e8 }), rules).binding, "blocked");
+  assert.equal(calcLoanLimit(input({ ...base, annualIncome: 6.5e7 }), rules).binding, "blocked");
+  assert.equal(calcLoanLimit(input({ ...base, homes: "conditional1Home" }), rules).binding, "blocked");
+  // 신혼부부는 6억 이하 주택, 소득 8,500만까지
+  const nw = calcLoanLimit(input({ ...base, price: 5.5e8, annualIncome: 8e7, household: "newlywed" }), rules);
+  assert.deepEqual(nw.blocks, []);
+});
+
+test("디딤돌 신혼부부 서울 6억: 규제지역 LTV 40%가 상품 LTV보다 낮아 2.4억", () => {
+  const r = calcLoanLimit(input({ price: 6e8, annualIncome: 8e7, policyProduct: "didimdol", household: "newlywed" }), rules);
+  assert.equal(r.ltv.ratio, 0.40);
+  assert.equal(r.cap.cap, 3.2e8);
+  assert.equal(r.finalLimit, 2.4e8);
+});
+
+test("보금자리론: 처분조건부 1주택 가능, 다주택 불가, 한도 3.6억", () => {
+  const base = { region: "부산", price: 6e8, annualIncome: 6e7, policyProduct: "bogeumjari", depositTier: "metro" };
+  const ok = calcLoanLimit(input({ ...base, homes: "conditional1Home" }), rules);
+  assert.deepEqual(ok.blocks, []);
+  assert.equal(ok.finalLimit, 3.6e8);
+  assert.equal(calcLoanLimit(input({ ...base, homes: "multiHome" }), rules).binding, "blocked");
+});
+
 test("기존 예시: 1억 × min(70%, 70%) − 2,500만 = 4,500만", () => {
   const r = calcLoanLimit(input({ region: "강원", use: "단독주택", price: 1e8, auctionRate: 0.70, depositTier: "other", houseUnits: 1 }), rules);
   near(r.finalLimit, 45_000_000);

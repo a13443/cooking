@@ -8,11 +8,11 @@
     effectiveDate: "2026-10",
 
     // 규제지역(투기과열지구·조정대상지역). 시도 전체면 "*", 일부면 시·군·구 목록.
-    // 2026.7.1 화성시 동탄구·용인시 기흥구·구리시 추가 지정 보도가 있으나 원문을 확인하지 못해 넣지 않았다.
+    // 10.15 대책 12곳 + 2026.7.1 추가 지정(6.30 대책) 화성시 동탄구·용인시 기흥구·구리시
     regulatedAreas: {
       서울: "*",
       경기: ["과천시", "광명시", "성남시 분당구", "성남시 수정구", "성남시 중원구", "수원시 영통구", "수원시 장안구",
-        "수원시 팔달구", "안양시 동안구", "용인시 수지구", "의왕시", "하남시"],
+        "수원시 팔달구", "안양시 동안구", "용인시 수지구", "의왕시", "하남시", "화성시 동탄구", "용인시 기흥구", "구리시"],
     },
     capitalArea: ["서울", "경기", "인천"],
 
@@ -20,6 +20,7 @@
     housingUses: ["아파트", "단독주택", "다가구주택", "단독·다가구 겸용", "연립·다세대"],
     apartmentUses: ["아파트"],
 
+    // 아래 금액 상한은 규제지역뿐 아니라 수도권 전체(비규제 수도권 포함)에 적용된다.
     // 수도권·규제지역 주택구입 목적 주담대 금액 상한 (maxPrice 이하 구간, null은 그 이상 전부)
     mortgageCap_regulated_purchase: [
       { maxPrice: 1500000000, cap: 600000000 },
@@ -27,18 +28,30 @@
       { maxPrice: null, cap: 200000000 },
     ],
     relocationLoanCap: 600000000,
-    livingStabilityExemptFromCap: true,
+    // 6.27 대책: 수도권·규제지역 생활안정자금 목적 주담대 최대 1억, 이 지역 주택 2채 이상 보유자는 금지
+    livingStabilityCap: 100000000,
+    livingStabilityMultiHomeBanned: true,
 
+    // 6.27 대책: 수도권·규제지역 다주택자 주택구입 주담대 금지, 1주택자는 6개월 내 처분조건부로만 가능,
+    // 생애최초 LTV 70%. 규제지역은 10.15 대책으로 무주택·처분조건부 1주택 40%.
     ltv: {
       regulated: {
         noHome: 0.40,
         conditional1Home: 0.40,
-        oneHome: 0.0, // 처분조건 없는 1주택자의 규제지역 주택구입은 불가로 가정 (확인 필요)
+        oneHome: 0.0,
         multiHome: 0.0,
         nonPurchase: 0.40, // 생활안정자금·이주비 (확인 필요)
         firstTimeBuyer: 0.70,
       },
-      unregulated: { default: 0.70, firstTimeBuyer: 0.80 },
+      unregulatedCapital: {
+        noHome: 0.70,
+        conditional1Home: 0.70,
+        oneHome: 0.0,
+        multiHome: 0.0,
+        nonPurchase: 0.70, // 생활안정자금·이주비 (확인 필요)
+        firstTimeBuyer: 0.70,
+      },
+      local: { default: 0.70, firstTimeBuyer: 0.80 },
       nonHousing: 0.70,
     },
 
@@ -46,7 +59,7 @@
     stressRate: {
       regulated: 0.030,
       local: 0.0075,
-      unregulatedCapital: 0.015,
+      unregulatedCapital: 0.030, // 10.15 대책: 수도권·규제지역 주담대 하한 3.0%
       localStage3: 0.015, // localStage3Applied가 true일 때 지방에 쓸 값 (확인 필요)
     },
     stressRateFlags: { localStage3Applied: false },

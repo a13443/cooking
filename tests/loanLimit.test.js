@@ -18,9 +18,11 @@ function input(over = {}) {
 }
 const near = (a, b, tol = 1) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
 
-test("소재지 구분: 서울·경기 규제 12곳은 규제지역, 그 밖의 수도권, 지방", () => {
+test("소재지 구분: 서울·경기 규제 15곳은 규제지역, 그 밖의 수도권, 지방", () => {
   assert.equal(classifyLocation("서울", "", rules), "regulated");
   assert.equal(classifyLocation("경기", "과천시", rules), "regulated");
+  assert.equal(classifyLocation("경기", "화성시 동탄구", rules), "regulated");
+  assert.equal(classifyLocation("경기", "구리시", rules), "regulated");
   assert.equal(classifyLocation("경기", "기타", rules), "unregulatedCapital");
   assert.equal(classifyLocation("인천", "", rules), "unregulatedCapital");
   assert.equal(classifyLocation("부산", "", rules), "local");
@@ -61,10 +63,23 @@ test("규제지역 처분조건부 1주택 주택구입: LTV 40%", () => {
   assert.equal(r.finalLimit, 4e8);
 });
 
-test("생활안정자금은 가격 구간 상한 미적용 (시가 20억 → LTV 8억)", () => {
+test("생활안정자금은 수도권·규제지역 1억 상한 (시가 20억 → LTV 8억이어도 1억)", () => {
   const r = calcLoanLimit(input({ price: 20e8, purpose: "livingStability" }), rules);
+  assert.equal(r.cap.cap, 1e8);
+  assert.equal(r.finalLimit, 1e8);
+  assert.equal(r.binding, "cap");
+});
+
+test("수도권 다주택자 생활안정자금: 불가", () => {
+  const r = calcLoanLimit(input({ region: "인천", price: 5e8, purpose: "livingStability", homes: "multiHome" }), rules);
+  assert.equal(r.binding, "blocked");
+  assert.ok(r.blocks.some((m) => m.includes("생활안정자금")));
+});
+
+test("지방 생활안정자금은 상한 없음", () => {
+  const r = calcLoanLimit(input({ region: "부산", price: 3e8, purpose: "livingStability", depositTier: "metro" }), rules);
   assert.equal(r.cap, null);
-  assert.equal(r.finalLimit, 8e8);
+  assert.equal(r.finalLimit, 2.1e8);
 });
 
 test("이주비는 집값과 관계없이 6억 상한 (시가 30억)", () => {
@@ -83,11 +98,41 @@ test("지방 주택 3억 무주택: LTV 70%, 상한 없음, 스트레스 0.75%",
   assert.equal(r.finalLimit, 2.1e8);
 });
 
-test("비규제 수도권: 스트레스 1.5%, LTV 70%", () => {
+test("비규제 수도권: 스트레스 3%, LTV 70%", () => {
   const r = calcLoanLimit(input({ region: "인천", price: 5e8 }), rules);
   assert.equal(r.location, "unregulatedCapital");
-  near(r.dsr.stress, 0.015, 1e-12);
+  near(r.dsr.stress, 0.03, 1e-12);
   assert.equal(r.ltv.ratio, 0.70);
+});
+
+test("비규제 수도권도 가격 구간 상한 적용 (인천 20억 → 4억)", () => {
+  const r = calcLoanLimit(input({ region: "인천", price: 20e8 }), rules);
+  assert.equal(r.cap.cap, 4e8);
+  assert.equal(r.finalLimit, 4e8);
+  assert.equal(r.binding, "cap");
+});
+
+test("비규제 수도권 다주택·1주택(처분 계획 없음) 주택구입: 불가, 처분조건부 1주택은 70%", () => {
+  for (const homes of ["multiHome", "oneHome"]) {
+    const r = calcLoanLimit(input({ region: "인천", price: 5e8, homes }), rules);
+    assert.equal(r.binding, "blocked", homes);
+  }
+  const r = calcLoanLimit(input({ region: "인천", price: 5e8, homes: "conditional1Home" }), rules);
+  assert.equal(r.ltv.ratio, 0.70);
+  assert.equal(r.finalLimit, 3.5e8);
+});
+
+test("생애최초: 수도권 70%, 지방 80%", () => {
+  const capital = calcLoanLimit(input({ region: "인천", price: 5e8, firstTimeBuyer: true }), rules);
+  assert.equal(capital.ltv.ratio, 0.70);
+  const local = calcLoanLimit(input({ region: "부산", price: 3e8, firstTimeBuyer: true, depositTier: "metro" }), rules);
+  assert.equal(local.ltv.ratio, 0.80);
+});
+
+test("2026.7.1 추가 규제지역 동탄구 10억: LTV 40% = 4억", () => {
+  const r = calcLoanLimit(input({ region: "경기", district: "화성시 동탄구", price: 10e8, depositTier: "dense" }), rules);
+  assert.equal(r.location, "regulated");
+  assert.equal(r.finalLimit, 4e8);
 });
 
 test("DSR이 결정: 연소득 5천만, 은행 40%, 4% + 스트레스 3%, 30년", () => {

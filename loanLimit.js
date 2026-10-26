@@ -22,20 +22,23 @@
     const L = rules.ltv;
     if (!rules.housingUses.includes(input.use)) return { ratio: L.nonHousing, why: "비주택 담보" };
     const first = input.firstTimeBuyer && input.homes === "noHome" && input.purpose === "purchase";
-    if (location === "regulated") {
-      if (input.purpose !== "purchase") return { ratio: L.regulated.nonPurchase, why: `규제지역 ${PURPOSE_NAMES[input.purpose]}` };
-      if (first) return { ratio: L.regulated.firstTimeBuyer, why: "규제지역 생애최초 구입" };
-      return { ratio: L.regulated[input.homes], why: `규제지역 ${HOMES_NAMES[input.homes]} 주택구입` };
+    const name = LOCATION_NAMES[location];
+    if (location === "local") {
+      if (first) return { ratio: L.local.firstTimeBuyer, why: `${name} 생애최초 구입` };
+      return { ratio: L.local.default, why: name };
     }
-    if (first) return { ratio: L.unregulated.firstTimeBuyer, why: `${LOCATION_NAMES[location]} 생애최초 구입` };
-    return { ratio: L.unregulated.default, why: LOCATION_NAMES[location] };
+    // 규제지역과 비규제 수도권은 보유 주택 수·목적별 표를 쓴다
+    const T = L[location];
+    if (input.purpose !== "purchase") return { ratio: T.nonPurchase, why: `${name} ${PURPOSE_NAMES[input.purpose]}` };
+    if (first) return { ratio: T.firstTimeBuyer, why: `${name} 생애최초 구입` };
+    return { ratio: T[input.homes], why: `${name} ${HOMES_NAMES[input.homes]} 주택구입` };
   }
 
-  // 가격 구간·목적별 금액 상한. 해당 없으면 null.
+  // 가격 구간·목적별 금액 상한 (수도권 전체 + 규제지역). 해당 없으면 null.
   function amountCap(input, location, rules) {
-    if (location !== "regulated" || !rules.housingUses.includes(input.use)) return null;
+    if (location === "local" || !rules.housingUses.includes(input.use)) return null;
     if (input.purpose === "relocation") return { cap: rules.relocationLoanCap, why: "이주비 대출 상한" };
-    if (input.purpose === "livingStability" && rules.livingStabilityExemptFromCap) return null;
+    if (input.purpose === "livingStability") return { cap: rules.livingStabilityCap, why: "생활안정자금 상한" };
     if (input.purpose !== "purchase") return null;
     const tier = rules.mortgageCap_regulated_purchase.find((t) => t.maxPrice === null || input.price <= t.maxPrice);
     return { cap: tier.cap, why: tier.maxPrice === null ? "주택구입 가격 구간 상한 (최상위 구간)" : `주택구입 가격 구간 상한 (시가 ${tier.maxPrice / 1e8}억 이하)` };
@@ -112,9 +115,13 @@
     }
 
     // 4) 대출 불가·경고
-    if (housing && input.purpose === "purchase" && location === "regulated") {
-      if (ltvApplied === 0 && input.ltvOverride == null) blocks.push(`규제지역 ${HOMES_NAMES[input.homes]} 차주의 주택구입 목적 대출은 불가합니다 (LTV 0%).`);
-      if (rules.apartmentUses.includes(input.use) && input.price > rules.jeonseLoanBlockApartmentPrice && input.jeonse && input.jeonse.has)
+    if (housing && location !== "local") {
+      if (input.purpose === "purchase" && ltvApplied === 0 && input.ltvOverride == null)
+        blocks.push(`${LOCATION_NAMES[location]} ${HOMES_NAMES[input.homes]} 차주의 주택구입 목적 대출은 불가합니다 (LTV 0%).`);
+      if (input.purpose === "livingStability" && input.homes === "multiHome" && rules.livingStabilityMultiHomeBanned)
+        blocks.push("수도권·규제지역 주택을 2채 이상 보유하면 생활안정자금 목적 주담대를 받을 수 없습니다.");
+      if (location === "regulated" && input.purpose === "purchase" && rules.apartmentUses.includes(input.use) &&
+        input.price > rules.jeonseLoanBlockApartmentPrice && input.jeonse && input.jeonse.has)
         blocks.push(`전세대출을 보유한 채 규제지역 ${rules.jeonseLoanBlockApartmentPrice / 1e8}억 초과 아파트를 구입하는 대출은 불가합니다.`);
     }
     if ((input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)

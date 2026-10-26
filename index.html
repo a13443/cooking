@@ -225,7 +225,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
             <select id="homes">
               <option value="noHome">무주택</option>
               <option value="conditional1Home">처분조건부 1주택</option>
-              <option value="oneHome">1주택</option>
+              <option value="oneHome">1주택 (처분 계획 없음)</option>
               <option value="multiHome">다주택</option>
             </select>
           </div>
@@ -515,7 +515,7 @@ function render() {
     $(id + "-d").textContent = desc;
   };
   setLimit("lim-collateral", r.collateralLimit, `시가 × ${(r.ratio * 100).toFixed(1)}% − 소액임차보증금`, r.binding === "ltv" || r.binding === "auction");
-  setLimit("lim-cap", r.cap ? r.cap.cap : null, r.cap ? r.cap.why : (isHousing && r.location === "regulated" && $("purpose").value === "livingStability" ? "생활안정자금은 가격 구간 상한 미적용" : "수도권·규제지역 주택구입·이주비에만 적용"), r.binding === "cap");
+  setLimit("lim-cap", r.cap ? r.cap.cap : null, r.cap ? r.cap.why : "수도권·규제지역 주택담보대출에만 적용", r.binding === "cap");
   setLimit("lim-dsr", r.dsr.excluded ? null : Math.max(0, r.dsr.limit), r.dsr.why, r.binding === "dsr");
 
   $("l-total").textContent = fmt(r.finalLimit);

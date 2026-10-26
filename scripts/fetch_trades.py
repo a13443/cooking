@@ -3,7 +3,7 @@
 사용법:
     python scripts/fetch_trades.py --key <인증키> [--months 12] [시군구 코드 ...]
 
-인증키는 공공데이터포털(data.go.kr) '국토교통부_아파트 매매 실거래가 자료' 활용신청 후 받은
+인증키는 공공데이터포털(data.go.kr) '국토교통부_아파트 매매 실거래가 상세 자료' 활용신청 후 받은
 일반 인증키(Decoding)다. --key 대신 환경변수 DATA_GO_KR_KEY 로 줘도 된다.
 시군구 코드는 법정동 코드 앞 5자리이고, 이름을 붙이려면 41590=화성시 처럼 쓴다.
 코드를 주지 않으면 서울 25개 구를 받는다.
@@ -25,7 +25,8 @@ import xml.etree.ElementTree as ET
 from datetime import date
 from pathlib import Path
 
-ENDPOINT = "apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade"
+# 상세 자료 API (층·해제여부 포함). 기본 자료 API는 RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade
+ENDPOINT = "apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
 ROWS = 1000
 OUT = Path(__file__).resolve().parent.parent / "data" / "trades.js"
 

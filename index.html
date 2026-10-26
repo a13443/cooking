@@ -106,6 +106,21 @@ button.preset:hover { background: var(--accent-soft); }
 .total-amt { font-size: 24px; font-weight: 500; color: var(--accent); }
 .won { display: block; font-family: var(--font-body); font-size: 12px; color: var(--muted); }
 .note { font-size: 12px; color: var(--muted); margin: 0; }
+.limits { display: grid; gap: 8px; }
+.limit { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.limit .k { font-size: 13px; font-weight: 500; }
+.limit .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
+.limit .d { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.limit.bind { border-color: var(--accent); background: var(--accent-soft); }
+.limit.bind .k::after { content: " · 한도 결정"; color: var(--accent); font-weight: 600; }
+.limit.na .v { color: var(--muted); }
+.final { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; border-top: 2px solid var(--ink); padding-top: 14px; }
+.final .total-amt { font-family: var(--font-num); }
+.msgs { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.msgs li { font-size: 13px; border-radius: 6px; padding: 8px 12px; }
+.msgs li.block { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+.msgs li.warn { background: var(--warn-soft); color: var(--warn); }
+.disclaimer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; max-width: 80ch; }
 .alert { font-size: 13px; background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 8px 12px; margin: 0; }
 
 /* 지역 비교 */
@@ -139,8 +154,8 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
   <header>
     <div class="eyebrow">부동산 담보 · 1단계 계산기</div>
     <h1>내 부동산으로 받을 수 있는 예상 대출금액</h1>
-    <p class="lede">지역·용도별 법원경매 매각가율(5년치)과 현행 LTV 중 낮은 비율을 시세에 곱하고, 먼저 배당될 소액임차보증금을 빼서 대출가능금액을 가늠합니다.</p>
-    <div class="formula">대출가능금액 = 시세 × min(낙찰가율, LTV) − 소액임차보증금(호수 × 지역별 최우선변제금)</div>
+    <p class="lede">법원경매 매각가율(5년치)과 LTV 중 낮은 비율로 담보 기준 한도를 구하고, 수도권·규제지역 금액 상한과 소득 대비 DSR 한도까지 비교해 가장 작은 값을 보여줍니다.</p>
+    <div class="formula">대출가능금액 = min( 시가 × min(낙찰가율, LTV) − 소액임차보증금,  가격 구간·목적 상한,  DSR 한도 )</div>
   </header>
 
   <div class="main">
@@ -193,25 +208,41 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
       </div>
 
       <div class="group">
-        <h2>LTV (담보인정비율)</h2>
+        <h2>차주·대출 조건</h2>
         <div class="row">
           <div class="field" id="district-field" hidden>
             <label for="district">시·군·구</label>
             <select id="district"></select>
           </div>
           <div class="field">
-            <label for="borrower">차주 유형</label>
-            <select id="borrower">
-              <option value="general">일반 (무주택·처분조건 1주택)</option>
-              <option value="first">생애최초 구입</option>
+            <label>주택 소재지</label>
+            <span class="chip" id="location-chip">–</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="homes">보유 주택 수</label>
+            <select id="homes">
+              <option value="noHome">무주택</option>
+              <option value="conditional1Home">처분조건부 1주택</option>
+              <option value="oneHome">1주택</option>
+              <option value="multiHome">다주택</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="purpose">대출 목적</label>
+            <select id="purpose">
+              <option value="purchase">주택구입</option>
+              <option value="livingStability">생활안정자금</option>
+              <option value="relocation">이주비</option>
             </select>
           </div>
         </div>
-        <label class="check" for="purchase"><input type="checkbox" id="purchase"> 주택 구입 목적 대출 (수도권·규제지역 금액 한도 적용)</label>
+        <label class="check" for="first-time"><input type="checkbox" id="first-time"> 생애최초 주택 구입</label>
         <div class="rate-box">
           <div class="rate-top">
             <span class="rate-big" id="ltv-auto">–</span>
-            <span class="chip" id="ltv-chip">–</span>
+            <span class="chip" id="ltv-chip">LTV</span>
           </div>
           <span class="hint" id="ltv-detail"></span>
         </div>
@@ -219,6 +250,57 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         <div class="field" id="ltv-field" hidden>
           <label for="ltv-manual">적용할 LTV (%)</label>
           <input id="ltv-manual" type="number" min="0" max="100" step="1">
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>상환 능력 (DSR)</h2>
+        <div class="row">
+          <div class="field">
+            <label for="income">연소득 (원)</label>
+            <input id="income" class="money" type="text" inputmode="numeric" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="existing">기존 대출 연간 원리금 (원)</label>
+            <input id="existing" class="money" type="text" inputmode="numeric" autocomplete="off">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="sector">금융권</label>
+            <select id="sector"><option value="bank">은행</option><option value="nonBank">비은행</option></select>
+          </div>
+          <div class="field">
+            <label for="rate-type">금리 유형</label>
+            <select id="rate-type">
+              <option value="variable">변동</option><option value="mixed">혼합형</option>
+              <option value="periodic">주기형</option><option value="fixed">고정</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="loan-rate">대출 금리 (%)</label>
+            <input id="loan-rate" type="number" min="0" max="30" step="0.01">
+          </div>
+          <div class="field">
+            <label for="years">만기 (년)</label>
+            <input id="years" type="number" min="1" max="50" step="1">
+          </div>
+        </div>
+        <label class="check" for="policy-mortgage"><input type="checkbox" id="policy-mortgage"> 정책모기지 (디딤돌·보금자리론 등)</label>
+        <div class="field">
+          <label for="credit">보유 신용대출 총액 (원)</label>
+          <input id="credit" class="money" type="text" inputmode="numeric" autocomplete="off">
+        </div>
+        <label class="check" for="jeonse"><input type="checkbox" id="jeonse"> 전세대출 보유</label>
+        <div class="group" id="jeonse-fields" hidden>
+          <label class="check" for="jeonse-capital"><input type="checkbox" id="jeonse-capital"> 전세 주택이 수도권·규제지역</label>
+          <label class="check" for="jeonse-policy"><input type="checkbox" id="jeonse-policy"> 정책 전세대출</label>
+          <div class="field">
+            <label for="jeonse-interest">전세대출 연 이자 (원)</label>
+            <input id="jeonse-interest" class="money" type="text" inputmode="numeric" autocomplete="off">
+          </div>
         </div>
       </div>
 
@@ -252,16 +334,23 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
       </div>
       <table class="ledger">
         <tbody>
-          <tr><td class="op"></td><td>추정 시세<span class="sub" id="l-price-sub"></span></td><td class="amt" id="l-price"></td></tr>
+          <tr><td class="op"></td><td>주택 시가<span class="sub" id="l-price-sub"></span></td><td class="amt" id="l-price"></td></tr>
           <tr><td class="op">×</td><td>적용 비율 = min(낙찰가율, LTV)<span class="sub" id="l-rate-sub"></span></td><td class="amt" id="l-rate"></td></tr>
-          <tr><td class="op">=</td><td>담보인정액<span class="sub" id="l-bid-sub"></span></td><td class="amt" id="l-bid"></td></tr>
           <tr><td class="op">−</td><td>소액임차보증금<span class="sub" id="l-ded-sub"></span></td><td class="amt" id="l-ded"></td></tr>
-          <tr id="l-cap-row" hidden><td class="op">↓</td><td>주담대 금액 한도<span class="sub" id="l-cap-sub"></span></td><td class="amt" id="l-cap"></td></tr>
-          <tr class="total"><td class="op">=</td><td class="total-label">예상 대출가능금액</td><td class="amt"><span class="total-amt" id="l-total"></span><span class="won" id="l-total-kor"></span></td></tr>
         </tbody>
       </table>
       <p class="alert" id="cap-alert" hidden></p>
-      <p class="note">참고용 추정치입니다. 실제 대출 한도는 금융회사의 LTV·DSR 규정, 선순위 채권, 감정평가 결과에 따라 달라집니다.</p>
+      <div class="limits">
+        <div class="limit" id="lim-collateral"><span class="k">담보 기준 한도</span><span class="v" id="lim-collateral-v"></span><span class="d" id="lim-collateral-d"></span></div>
+        <div class="limit" id="lim-cap"><span class="k">가격 구간·목적 상한</span><span class="v" id="lim-cap-v"></span><span class="d" id="lim-cap-d"></span></div>
+        <div class="limit" id="lim-dsr"><span class="k">DSR 한도</span><span class="v" id="lim-dsr-v"></span><span class="d" id="lim-dsr-d"></span></div>
+      </div>
+      <div class="final">
+        <span class="total-label">예상 대출가능금액 = min(세 한도)</span>
+        <span><span class="total-amt" id="l-total"></span><span class="won" id="l-total-kor"></span></span>
+      </div>
+      <ul class="msgs" id="msgs"></ul>
+      <p class="note">선순위 채권과 감정평가 결과는 반영하지 않았습니다.</p>
     </div>
   </div>
 
@@ -279,7 +368,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
       <li><b>표본이 적을 때</b>: 기간마다 지역의 해당 용도 매각이 <span id="src-min"></span>건 미만이면 같은 지역의 상위 분류 소계(예: 다가구 → 단독·다가구 전체), 그것도 부족하면 같은 기간 전국 값을 씁니다. 전국 값은 시도 파일을 모두 더한 값입니다.</li>
       <li><b>지역 통합</b>: 강원도·강원특별자치도는 강원, 전라북도·전북특별자치도는 전북, 광주·전남·전남광주는 광주전남으로 합산했습니다.</li>
       <li><b>최우선변제금</b>: 주택임대차보호법 시행령(2023.2.21 개정 기준)과 상가건물 임대차보호법 시행령의 지역별 금액. 적용 시점은 선순위 담보 설정일이 기준이며, 여기서는 지금 새로 설정하는 담보로 가정합니다. 사용 전 <a href="https://www.law.go.kr" target="_blank" rel="noopener">국가법령정보센터</a>에서 현행 조문을 확인하세요.</li>
-      <li><b>LTV</b>: 주택은 규제지역(투기과열지구·조정대상지역) 40%, 그 밖의 지역 70%, 생애최초 구입은 규제지역 70%·그 밖 80%로 넣었습니다. 규제지역은 2025.10.15 대책(서울 전역, 경기 12곳)과 2026.7.1 추가 지정(화성 동탄구, 용인 기흥구, 구리시) 기준입니다. 주택 구입 목적이면 수도권·규제지역에서 시가 15억 이하 6억, 25억 이하 4억, 25억 초과 2억 한도를 함께 적용합니다. 토지·상가 등 비주택은 70%로 두었습니다. 다주택자 규정은 반영하지 않았습니다. 정책은 자주 바뀌므로 금융위원회·국토교통부 발표로 확인하세요.</li>
+      <li><b>대출 규제</b>: 2025.6.27·10.15 대책 기준으로 LTV, 수도권·규제지역 주택구입 가격 구간 상한(15억 이하 6억, 25억 이하 4억, 초과 2억), 이주비 6억 상한, DSR(은행 40%, 비은행 50%)과 스트레스 금리를 적용합니다. 규제 수치와 규제지역 목록은 <code>loanRules.js</code>에 모아 두었습니다.</li>
       <li><b>상한</b>: 최우선변제 합계는 주택(건물) 가액의 2분의 1을 넘지 못하므로, 차감액은 예상 낙찰가의 절반을 넘지 않게 했습니다.</li>
     </ul>
     <div class="tbl-wrap">
@@ -289,26 +378,18 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
       </table>
     </div>
   </section>
+
+  <p class="disclaimer" id="disclaimer"></p>
 </div>
 
+<script src="loanRules.js"></script>
+<script src="loanLimit.js"></script>
 <script>
 const RATES = /*RATES*/{"periods":{"1y":"2025.10~2026.09","3y":"2023.10~2026.09","5y":"2021.10~2026.09"},"weights":{"1y":0.5,"3y":0.3,"5y":0.2},"minSold":30,"uses":["아파트","단독주택","다가구주택","단독·다가구 겸용","연립·다세대","대지","임야","전·답","토지 겸용","상가","오피스텔","근린시설","상가 겸용"],"regions":["서울","경기","인천","강원","충북","충남","대전","세종","전북","광주전남","경북","대구","경남","부산","울산","제주"],"national":{"아파트":{"weighted":84.4,"applied":84.4,"basis":"가중평균","parts":{"1y":{"rate":85.0,"source":"전국","n":14160},"3y":{"rate":84.0,"source":"전국","n":43040},"5y":{"rate":83.7,"source":"전국","n":59435}}},"단독주택":{"weighted":59.5,"applied":66.6,"basis":"5년 매각가율","parts":{"1y":{"rate":55.6,"source":"전국","n":1076},"3y":{"rate":61.4,"source":"전국","n":4931},"5y":{"rate":66.6,"source":"전국","n":8102}}},"다가구주택":{"weighted":64.9,"applied":67.4,"basis":"5년 매각가율","parts":{"1y":{"rate":63.2,"source":"전국","n":511},"3y":{"rate":66.1,"source":"전국","n":1836},"5y":{"rate":67.4,"source":"전국","n":2612}}},"단독·다가구 겸용":{"weighted":60.6,"applied":61.7,"basis":"5년 매각가율","parts":{"1y":{"rate":59.7,"source":"전국","n":1937},"3y":{"rate":61.3,"source":"전국","n":2474},"5y":{"rate":61.7,"source":"전국","n":2592}}},"연립·다세대":{"weighted":67.8,"applied":69.7,"basis":"5년 매각가율","parts":{"1y":{"rate":66.4,"source":"전국","n":15535},"3y":{"rate":68.9,"source":"전국","n":34273},"5y":{"rate":69.7,"source":"전국","n":43651}}},"대지":{"weighted":54.5,"applied":63.2,"basis":"5년 매각가율","parts":{"1y":{"rate":49.5,"source":"전국","n":1739},"3y":{"rate":57.1,"source":"전국","n":5486},"5y":{"rate":63.2,"source":"전국","n":8760}}},"임야":{"weighted":43.1,"applied":50.5,"basis":"5년 매각가율","parts":{"1y":{"rate":39.6,"source":"전국","n":3149},"3y":{"rate":43.9,"source":"전국","n":9656},"5y":{"rate":50.5,"source":"전국","n":16555}}},"전·답":{"weighted":48.9,"applied":56.5,"basis":"5년 매각가율","parts":{"1y":{"rate":44.9,"source":"전국","n":7195},"3y":{"rate":50.5,"source":"전국","n":20983},"5y":{"rate":56.5,"source":"전국","n":32631}}},"토지 겸용":{"weighted":51.3,"applied":57.3,"basis":"5년 매각가율","parts":{"1y":{"rate":46.5,"source":"전국","n":1618},"3y":{"rate":55.2,"source":"전국","n":2313},"5y":{"rate":57.3,"source":"전국","n":3146}}},"상가":{"weighted":48.0,"applied":61.2,"basis":"5년 매각가율","parts":{"1y":{"rate":40.8,"source":"전국","n":245},"3y":{"rate":51.1,"source":"전국","n":1464},"5y":{"rate":61.2,"source":"전국","n":2354}}},"오피스텔":{"weighted":66.4,"applied":68.3,"basis":"5년 매각가율","parts":{"1y":{"rate":64.9,"source":"전국","n":6700},"3y":{"rate":67.6,"source":"전국","n":14426},"5y":{"rate":68.3,"source":"전국","n":17111}}},"근린시설":{"weighted":50.2,"applied":56.1,"basis":"5년 매각가율","parts":{"1y":{"rate":47.0,"source":"전국","n":2663},"3y":{"rate":51.5,"source":"전국","n":8940},"5y":{"rate":56.1,"source":"전국","n":12142}}},"상가 겸용":{"weighted":53.9,"applied":58.0,"basis":"5년 매각가율","parts":{"1y":{"rate":52.1,"source":"전국","n":5674},"3y":{"rate":54.3,"source":"전국","n":6923},"5y":{"rate":58.0,"source":"전국","n":7658}}}},"table":{"서울":{"아파트":{"weighted":94.0,"applied":94.0,"basis":"가중평균","parts":{"1y":{"rate":96.5,"source":"지역","n":934},"3y":{"rate":92.1,"source":"지역","n":3709},"5y":{"rate":90.8,"source":"지역","n":4521}}},"단독주택":{"weighted":72.5,"applied":77.1,"basis":"5년 매각가율","parts":{"1y":{"rate":69.8,"source":"지역","n":76},"3y":{"rate":74.0,"source":"지역","n":306},"5y":{"rate":77.1,"source":"지역","n":425}}},"다가구주택":{"weighted":73.5,"applied":76.6,"basis":"5년 매각가율","parts":{"1y":{"rate":71.2,"source":"지역","n":70},"3y":{"rate":75.3,"source":"지역","n":260},"5y":{"rate":76.6,"source":"지역","n":333}}},"단독·다가구 겸용":{"weighted":72.4,"applied":73.4,"basis":"5년 매각가율","parts":{"1y":{"rate":71.5,"source":"지역","n":154},"3y":{"rate":73.1,"source":"지역","n":204},"5y":{"rate":73.4,"source":"지역","n":213}}},"연립·다세대":{"weighted":76.7,"applied":77.9,"basis":"5년 매각가율","parts":{"1y":{"rate":75.8,"source":"지역","n":4967},"3y":{"rate":77.5,"source":"지역","n":11566},"5y":{"rate":77.9,"source":"지역","n":13685}}},"대지":{"weighted":70.0,"applied":80.3,"basis":"5년 매각가율","parts":{"1y":{"rate":62.5,"source":"지역","n":79},"3y":{"rate":75.8,"source":"지역","n":248},"5y":{"rate":80.3,"source":"지역","n":384}}},"임야":{"weighted":43.7,"applied":43.7,"basis":"가중평균","parts":{"1y":{"rate":55.2,"source":"지역 소계","n":135},"3y":{"rate":31.4,"source":"지역","n":69},"5y":{"rate":33.2,"source":"지역","n":123}}},"전·답":{"weighted":65.2,"applied":71.4,"basis":"5년 매각가율","parts":{"1y":{"rate":55.2,"source":"지역 소계","n":135},"3y":{"rate":77.9,"source":"지역","n":43},"5y":{"rate":71.4,"source":"지역","n":69}}},"토지 겸용":{"weighted":74.6,"applied":93.8,"basis":"5년 매각가율","parts":{"1y":{"rate":55.2,"source":"지역 소계","n":135},"3y":{"rate":94.2,"source":"지역","n":37},"5y":{"rate":93.8,"source":"지역","n":43}}},"상가":{"weighted":67.2,"applied":79.8,"basis":"5년 매각가율","parts":{"1y":{"rate":64.5,"source":"지역","n":50},"3y":{"rate":63.2,"source":"지역","n":274},"5y":{"rate":79.8,"source":"지역","n":436}}},"오피스텔":{"weighted":75.4,"applied":78.0,"basis":"5년 매각가율","parts":{"1y":{"rate":73.3,"source":"지역","n":1555},"3y":{"rate":77.2,"source":"지역","n":2998},"5y":{"rate":78.0,"source":"지역","n":3263}}},"근린시설":{"weighted":71.2,"applied":76.0,"basis":"5년 매각가율","parts":{"1y":{"rate":70.1,"source":"지역","n":245},"3y":{"rate":69.8,"source":"지역","n":966},"5y":{"rate":76.0,"source":"지역","n":1374}}},"상가 겸용":{"weighted":77.2,"applied":83.9,"basis":"5년 매각가율","parts":{"1y":{"rate":74.6,"source":"지역","n":663},"3y":{"rate":76.9,"source":"지역","n":851},"5y":{"rate":83.9,"source":"지역","n":937}}}},"경기":{"아파트":{"weighted":86.2,"applied":86.2,"basis":"가중평균","parts":{"1y":{"rate":86.7,"source":"지역","n":3698},"3y":{"rate":85.9,"source":"지역","n":10699},"5y":{"rate":85.4,"source":"지역","n":13354}}},"단독주택":{"weighted":58.5,"applied":67.3,"basis":"5년 매각가율","parts":{"1y":{"rate":53.1,"source":"지역","n":135},"3y":{"rate":61.6,"source":"지역","n":651},"5y":{"rate":67.3,"source":"지역","n":1079}}},"다가구주택":{"weighted":62.4,"applied":67.5,"basis":"5년 매각가율","parts":{"1y":{"rate":58.7,"source":"지역","n":65},"3y":{"rate":65.3,"source":"지역","n":208},"5y":{"rate":67.5,"source":"지역","n":333}}},"단독·다가구 겸용":{"weighted":60.7,"applied":62.1,"basis":"5년 매각가율","parts":{"1y":{"rate":59.8,"source":"지역","n":315},"3y":{"rate":61.2,"source":"지역","n":399},"5y":{"rate":62.1,"source":"지역","n":420}}},"연립·다세대":{"weighted":62.5,"applied":65.1,"basis":"5년 매각가율","parts":{"1y":{"rate":60.7,"source":"지역","n":5654},"3y":{"rate":63.7,"source":"지역","n":11450},"5y":{"rate":65.1,"source":"지역","n":14118}}},"대지":{"weighted":55.2,"applied":62.6,"basis":"5년 매각가율","parts":{"1y":{"rate":51.4,"source":"지역","n":226},"3y":{"rate":56.7,"source":"지역","n":712},"5y":{"rate":62.6,"source":"지역","n":1072}}},"임야":{"weighted":46.5,"applied":54.0,"basis":"5년 매각가율","parts":{"1y":{"rate":43.0,"source":"지역","n":510},"3y":{"rate":47.3,"source":"지역","n":1661},"5y":{"rate":54.0,"source":"지역","n":2991}}},"전·답":{"weighted":57.6,"applied":67.4,"basis":"5년 매각가율","parts":{"1y":{"rate":52.3,"source":"지역","n":693},"3y":{"rate":60.0,"source":"지역","n":2156},"5y":{"rate":67.4,"source":"지역","n":3547}}},"토지 겸용":{"weighted":47.3,"applied":52.2,"basis":"5년 매각가율","parts":{"1y":{"rate":44.4,"source":"지역","n":299},"3y":{"rate":48.8,"source":"지역","n":420},"5y":{"rate":52.2,"source":"지역","n":513}}},"상가":{"weighted":40.5,"applied":51.7,"basis":"5년 매각가율","parts":{"1y":{"rate":33.2,"source":"지역","n":61},"3y":{"rate":45.3,"source":"지역","n":252},"5y":{"rate":51.7,"source":"지역","n":370}}},"오피스텔":{"weighted":67.2,"applied":70.4,"basis":"5년 매각가율","parts":{"1y":{"rate":64.9,"source":"지역","n":897},"3y":{"rate":68.8,"source":"지역","n":2401},"5y":{"rate":70.4,"source":"지역","n":2890}}},"근린시설":{"weighted":45.8,"applied":53.9,"basis":"5년 매각가율","parts":{"1y":{"rate":40.6,"source":"지역","n":735},"3y":{"rate":49.2,"source":"지역","n":2237},"5y":{"rate":53.9,"source":"지역","n":2949}}},"상가 겸용":{"weighted":51.7,"applied":55.2,"basis":"5년 매각가율","parts":{"1y":{"rate":49.5,"source":"지역","n":1918},"3y":{"rate":52.9,"source":"지역","n":2301},"5y":{"rate":55.2,"source":"지역","n":2435}}}},"인천":{"아파트":{"weighted":78.5,"applied":79.0,"basis":"5년 매각가율","parts":{"1y":{"rate":78.2,"source":"지역","n":1281},"3y":{"rate":78.7,"source":"지역","n":3610},"5y":{"rate":79.0,"source":"지역","n":4385}}},"단독주택":{"weighted":56.0,"applied":66.7,"basis":"5년 매각가율","parts":{"1y":{"rate":49.3,"source":"지역 소계","n":67},"3y":{"rate":60.0,"source":"지역","n":92},"5y":{"rate":66.7,"source":"지역","n":149}}},"다가구주택":{"weighted":54.3,"applied":61.5,"basis":"5년 매각가율","parts":{"1y":{"rate":49.3,"source":"지역 소계","n":67},"3y":{"rate":57.7,"source":"지역","n":30},"5y":{"rate":61.5,"source":"지역","n":41}}},"단독·다가구 겸용":{"weighted":53.9,"applied":61.7,"basis":"5년 매각가율","parts":{"1y":{"rate":49.3,"source":"지역 소계","n":67},"3y":{"rate":56.2,"source":"지역 소계","n":150},"5y":{"rate":61.7,"source":"지역 소계","n":219}}},"연립·다세대":{"weighted":62.0,"applied":65.1,"basis":"5년 매각가율","parts":{"1y":{"rate":60.1,"source":"지역","n":2231},"3y":{"rate":63.0,"source":"지역","n":5006},"5y":{"rate":65.1,"source":"지역","n":6388}}},"대지":{"weighted":57.1,"applied":64.3,"basis":"5년 매각가율","parts":{"1y":{"rate":52.8,"source":"지역","n":49},"3y":{"rate":59.5,"source":"지역","n":176},"5y":{"rate":64.3,"source":"지역","n":264}}},"임야":{"weighted":40.9,"applied":52.2,"basis":"5년 매각가율","parts":{"1y":{"rate":37.9,"source":"지역","n":65},"3y":{"rate":38.5,"source":"지역","n":192},"5y":{"rate":52.2,"source":"지역","n":365}}},"전·답":{"weighted":49.9,"applied":64.2,"basis":"5년 매각가율","parts":{"1y":{"rate":42.8,"source":"지역","n":81},"3y":{"rate":52.1,"source":"지역","n":234},"5y":{"rate":64.2,"source":"지역","n":395}}},"토지 겸용":{"weighted":55.1,"applied":68.7,"basis":"5년 매각가율","parts":{"1y":{"rate":50.2,"source":"지역 소계","n":202},"3y":{"rate":54.1,"source":"지역 소계","n":616},"5y":{"rate":68.7,"source":"지역","n":35}}},"상가":{"weighted":47.9,"applied":47.9,"basis":"가중평균","parts":{"1y":{"rate":55.5,"source":"지역 소계","n":2847},"3y":{"rate":38.0,"source":"지역","n":51},"5y":{"rate":43.9,"source":"지역","n":68}}},"오피스텔":{"weighted":64.9,"applied":67.0,"basis":"5년 매각가율","parts":{"1y":{"rate":63.3,"source":"지역","n":2300},"3y":{"rate":66.3,"source":"지역","n":4522},"5y":{"rate":67.0,"source":"지역","n":4994}}},"근린시설":{"weighted":44.3,"applied":51.7,"basis":"5년 매각가율","parts":{"1y":{"rate":40.0,"source":"지역","n":275},"3y":{"rate":46.4,"source":"지역","n":648},"5y":{"rate":51.7,"source":"지역","n":855}}},"상가 겸용":{"weighted":50.8,"applied":52.5,"basis":"5년 매각가율","parts":{"1y":{"rate":49.7,"source":"지역","n":247},"3y":{"rate":51.6,"source":"지역","n":354},"5y":{"rate":52.5,"source":"지역","n":408}}}},"강원":{"아파트":{"weighted":79.8,"applied":82.4,"basis":"5년 매각가율","parts":{"1y":{"rate":79.1,"source":"지역","n":281},"3y":{"rate":79.2,"source":"지역","n":1171},"5y":{"rate":82.4,"source":"지역","n":1801}}},"단독주택":{"weighted":50.4,"applied":61.0,"basis":"5년 매각가율","parts":{"1y":{"rate":44.1,"source":"지역","n":72},"3y":{"rate":53.9,"source":"지역","n":262},"5y":{"rate":61.0,"source":"지역","n":469}}},"다가구주택":{"weighted":49.7,"applied":56.8,"basis":"5년 매각가율","parts":{"1y":{"rate":47.4,"source":"지역 소계","n":178},"3y":{"rate":48.9,"source":"지역","n":34},"5y":{"rate":56.8,"source":"지역","n":64}}},"단독·다가구 겸용":{"weighted":52.2,"applied":55.2,"basis":"5년 매각가율","parts":{"1y":{"rate":50.1,"source":"지역","n":93},"3y":{"rate":53.8,"source":"지역","n":123},"5y":{"rate":55.2,"source":"지역","n":126}}},"연립·다세대":{"weighted":54.4,"applied":56.3,"basis":"5년 매각가율","parts":{"1y":{"rate":52.7,"source":"지역","n":121},"3y":{"rate":56.1,"source":"지역","n":255},"5y":{"rate":56.3,"source":"지역","n":362}}},"대지":{"weighted":48.4,"applied":60.2,"basis":"5년 매각가율","parts":{"1y":{"rate":41.9,"source":"지역","n":102},"3y":{"rate":51.2,"source":"지역","n":269},"5y":{"rate":60.2,"source":"지역","n":436}}},"임야":{"weighted":44.9,"applied":49.8,"basis":"5년 매각가율","parts":{"1y":{"rate":43.2,"source":"지역","n":306},"3y":{"rate":44.5,"source":"지역","n":813},"5y":{"rate":49.8,"source":"지역","n":1423}}},"전·답":{"weighted":48.6,"applied":53.4,"basis":"5년 매각가율","parts":{"1y":{"rate":46.2,"source":"지역","n":547},"3y":{"rate":49.4,"source":"지역","n":1487},"5y":{"rate":53.4,"source":"지역","n":2237}}},"토지 겸용":{"weighted":48.3,"applied":52.0,"basis":"5년 매각가율","parts":{"1y":{"rate":46.4,"source":"지역","n":124},"3y":{"rate":49.0,"source":"지역","n":188},"5y":{"rate":52.0,"source":"지역","n":242}}},"상가":{"weighted":42.7,"applied":43.7,"basis":"5년 매각가율","parts":{"1y":{"rate":43.5,"source":"지역 소계","n":257},"3y":{"rate":40.8,"source":"지역","n":32},"5y":{"rate":43.7,"source":"지역","n":51}}},"오피스텔":{"weighted":52.0,"applied":59.5,"basis":"5년 매각가율","parts":{"1y":{"rate":43.5,"source":"지역 소계","n":257},"3y":{"rate":61.1,"source":"지역","n":45},"5y":{"rate":59.5,"source":"지역","n":58}}},"근린시설":{"weighted":42.1,"applied":46.7,"basis":"5년 매각가율","parts":{"1y":{"rate":40.5,"source":"지역","n":111},"3y":{"rate":41.6,"source":"지역","n":314},"5y":{"rate":46.7,"source":"지역","n":469}}},"상가 겸용":{"weighted":48.0,"applied":50.2,"basis":"5년 매각가율","parts":{"1y":{"rate":47.9,"source":"지역","n":122},"3y":{"rate":46.6,"source":"지역","n":149},"5y":{"rate":50.2,"source":"지역","n":166}}}},"충북":{"아파트":{"weighted":79.5,"applied":79.8,"basis":"5년 매각가율","parts":{"1y":{"rate":79.2,"source":"지역","n":406},"3y":{"rate":79.7,"source":"지역","n":1245},"5y":{"rate":79.8,"source":"지역","n":2161}}},"단독주택":{"weighted":63.7,"applied":70.9,"basis":"5년 매각가율","parts":{"1y":{"rate":59.7,"source":"지역","n":44},"3y":{"rate":65.4,"source":"지역","n":260},"5y":{"rate":70.9,"source":"지역","n":458}}},"다가구주택":{"weighted":63.3,"applied":66.3,"basis":"5년 매각가율","parts":{"1y":{"rate":60.7,"source":"지역 소계","n":145},"3y":{"rate":65.5,"source":"지역","n":70},"5y":{"rate":66.3,"source":"지역","n":103}}},"단독·다가구 겸용":{"weighted":61.2,"applied":62.4,"basis":"5년 매각가율","parts":{"1y":{"rate":60.0,"source":"지역","n":94},"3y":{"rate":62.5,"source":"지역","n":121},"5y":{"rate":62.4,"source":"지역","n":123}}},"연립·다세대":{"weighted":52.7,"applied":55.7,"basis":"5년 매각가율","parts":{"1y":{"rate":51.1,"source":"지역","n":121},"3y":{"rate":53.4,"source":"지역","n":295},"5y":{"rate":55.7,"source":"지역","n":471}}},"대지":{"weighted":52.3,"applied":61.3,"basis":"5년 매각가율","parts":{"1y":{"rate":47.3,"source":"지역","n":65},"3y":{"rate":54.5,"source":"지역","n":194},"5y":{"rate":61.3,"source":"지역","n":329}}},"임야":{"weighted":44.6,"applied":52.6,"basis":"5년 매각가율","parts":{"1y":{"rate":41.3,"source":"지역","n":141},"3y":{"rate":44.9,"source":"지역","n":487},"5y":{"rate":52.6,"source":"지역","n":855}}},"전·답":{"weighted":54.5,"applied":62.6,"basis":"5년 매각가율","parts":{"1y":{"rate":50.5,"source":"지역","n":369},"3y":{"rate":55.7,"source":"지역","n":1187},"5y":{"rate":62.6,"source":"지역","n":1961}}},"토지 겸용":{"weighted":56.5,"applied":59.2,"basis":"5년 매각가율","parts":{"1y":{"rate":56.3,"source":"지역","n":57},"3y":{"rate":55.1,"source":"지역","n":95},"5y":{"rate":59.2,"source":"지역","n":128}}},"상가":{"weighted":40.6,"applied":47.1,"basis":"5년 매각가율","parts":{"1y":{"rate":35.9,"source":"지역 소계","n":262},"3y":{"rate":44.1,"source":"지역 소계","n":604},"5y":{"rate":47.1,"source":"지역","n":49}}},"오피스텔":{"weighted":44.2,"applied":57.9,"basis":"5년 매각가율","parts":{"1y":{"rate":35.9,"source":"지역 소계","n":262},"3y":{"rate":48.8,"source":"지역","n":54},"5y":{"rate":57.9,"source":"지역","n":100}}},"근린시설":{"weighted":43.1,"applied":49.5,"basis":"5년 매각가율","parts":{"1y":{"rate":38.6,"source":"지역","n":80},"3y":{"rate":46.5,"source":"지역","n":334},"5y":{"rate":49.5,"source":"지역","n":440}}},"상가 겸용":{"weighted":37.0,"applied":39.5,"basis":"5년 매각가율","parts":{"1y":{"rate":34.8,"source":"지역","n":164},"3y":{"rate":38.9,"source":"지역","n":189},"5y":{"rate":39.5,"source":"지역","n":202}}}},"충남":{"아파트":{"weighted":77.3,"applied":77.3,"basis":"가중평균","parts":{"1y":{"rate":77.9,"source":"지역","n":652},"3y":{"rate":76.6,"source":"지역","n":2208},"5y":{"rate":77.1,"source":"지역","n":3582}}},"단독주택":{"weighted":53.9,"applied":60.8,"basis":"5년 매각가율","parts":{"1y":{"rate":50.8,"source":"지역","n":52},"3y":{"rate":54.5,"source":"지역","n":279},"5y":{"rate":60.8,"source":"지역","n":494}}},"다가구주택":{"weighted":59.2,"applied":67.5,"basis":"5년 매각가율","parts":{"1y":{"rate":54.9,"source":"지역 소계","n":151},"3y":{"rate":61.0,"source":"지역","n":49},"5y":{"rate":67.5,"source":"지역","n":87}}},"단독·다가구 겸용":{"weighted":56.6,"applied":57.8,"basis":"5년 매각가율","parts":{"1y":{"rate":55.8,"source":"지역","n":89},"3y":{"rate":57.3,"source":"지역","n":123},"5y":{"rate":57.8,"source":"지역","n":143}}},"연립·다세대":{"weighted":50.2,"applied":53.2,"basis":"5년 매각가율","parts":{"1y":{"rate":48.8,"source":"지역","n":187},"3y":{"rate":50.6,"source":"지역","n":510},"5y":{"rate":53.2,"source":"지역","n":883}}},"대지":{"weighted":46.9,"applied":52.8,"basis":"5년 매각가율","parts":{"1y":{"rate":44.1,"source":"지역","n":129},"3y":{"rate":47.6,"source":"지역","n":441},"5y":{"rate":52.8,"source":"지역","n":680}}},"임야":{"weighted":40.3,"applied":46.3,"basis":"5년 매각가율","parts":{"1y":{"rate":37.7,"source":"지역","n":348},"3y":{"rate":40.6,"source":"지역","n":1078},"5y":{"rate":46.3,"source":"지역","n":1777}}},"전·답":{"weighted":46.2,"applied":50.6,"basis":"5년 매각가율","parts":{"1y":{"rate":44.5,"source":"지역","n":676},"3y":{"rate":46.0,"source":"지역","n":2188},"5y":{"rate":50.6,"source":"지역","n":3452}}},"토지 겸용":{"weighted":44.6,"applied":51.0,"basis":"5년 매각가율","parts":{"1y":{"rate":41.9,"source":"지역","n":236},"3y":{"rate":44.8,"source":"지역","n":417},"5y":{"rate":51.0,"source":"지역","n":692}}},"상가":{"weighted":45.5,"applied":49.2,"basis":"5년 매각가율","parts":{"1y":{"rate":43.0,"source":"지역 소계","n":434},"3y":{"rate":47.2,"source":"지역","n":95},"5y":{"rate":49.2,"source":"지역","n":160}}},"오피스텔":{"weighted":58.0,"applied":58.9,"basis":"5년 매각가율","parts":{"1y":{"rate":58.2,"source":"지역","n":44},"3y":{"rate":57.0,"source":"지역","n":196},"5y":{"rate":58.9,"source":"지역","n":325}}},"근린시설":{"weighted":40.6,"applied":49.4,"basis":"5년 매각가율","parts":{"1y":{"rate":34.7,"source":"지역","n":101},"3y":{"rate":44.6,"source":"지역","n":482},"5y":{"rate":49.4,"source":"지역","n":686}}},"상가 겸용":{"weighted":47.4,"applied":48.0,"basis":"5년 매각가율","parts":{"1y":{"rate":47.4,"source":"지역","n":279},"3y":{"rate":46.9,"source":"지역","n":357},"5y":{"rate":48.0,"source":"지역","n":417}}}},"대전":{"아파트":{"weighted":80.4,"applied":80.4,"basis":"가중평균","parts":{"1y":{"rate":81.6,"source":"지역","n":388},"3y":{"rate":79.3,"source":"지역","n":1149},"5y":{"rate":79.3,"source":"지역","n":1544}}},"단독주택":{"weighted":68.7,"applied":71.8,"basis":"5년 매각가율","parts":{"1y":{"rate":68.8,"source":"지역 소계","n":294},"3y":{"rate":66.6,"source":"지역","n":97},"5y":{"rate":71.8,"source":"지역","n":145}}},"다가구주택":{"weighted":71.1,"applied":72.6,"basis":"5년 매각가율","parts":{"1y":{"rate":70.1,"source":"지역","n":142},"3y":{"rate":71.7,"source":"지역","n":386},"5y":{"rate":72.6,"source":"지역","n":438}}},"단독·다가구 겸용":{"weighted":68.3,"applied":69.1,"basis":"5년 매각가율","parts":{"1y":{"rate":67.7,"source":"지역","n":129},"3y":{"rate":68.8,"source":"지역","n":175},"5y":{"rate":69.1,"source":"지역","n":178}}},"연립·다세대":{"weighted":66.0,"applied":69.9,"basis":"5년 매각가율","parts":{"1y":{"rate":64.7,"source":"지역","n":112},"3y":{"rate":65.5,"source":"지역","n":262},"5y":{"rate":69.9,"source":"지역","n":396}}},"대지":{"weighted":59.5,"applied":64.6,"basis":"5년 매각가율","parts":{"1y":{"rate":56.3,"source":"지역 소계","n":67},"3y":{"rate":61.5,"source":"지역","n":82},"5y":{"rate":64.6,"source":"지역","n":106}}},"임야":{"weighted":54.8,"applied":55.8,"basis":"5년 매각가율","parts":{"1y":{"rate":56.3,"source":"지역 소계","n":67},"3y":{"rate":51.8,"source":"지역","n":37},"5y":{"rate":55.8,"source":"지역","n":63}}},"전·답":{"weighted":56.5,"applied":57.4,"basis":"5년 매각가율","parts":{"1y":{"rate":56.3,"source":"지역 소계","n":67},"3y":{"rate":56.4,"source":"지역","n":56},"5y":{"rate":57.4,"source":"지역","n":89}}},"토지 겸용":{"weighted":57.7,"applied":60.2,"basis":"5년 매각가율","parts":{"1y":{"rate":56.3,"source":"지역 소계","n":67},"3y":{"rate":58.5,"source":"지역 소계","n":199},"5y":{"rate":60.2,"source":"지역 소계","n":282}}},"상가":{"weighted":49.9,"applied":55.6,"basis":"5년 매각가율","parts":{"1y":{"rate":50.5,"source":"지역 소계","n":257},"3y":{"rate":45.2,"source":"지역","n":31},"5y":{"rate":55.6,"source":"지역","n":70}}},"오피스텔":{"weighted":56.3,"applied":60.5,"basis":"5년 매각가율","parts":{"1y":{"rate":52.8,"source":"지역","n":39},"3y":{"rate":59.3,"source":"지역","n":170},"5y":{"rate":60.5,"source":"지역","n":197}}},"근린시설":{"weighted":52.0,"applied":56.7,"basis":"5년 매각가율","parts":{"1y":{"rate":48.3,"source":"지역","n":66},"3y":{"rate":55.1,"source":"지역","n":206},"5y":{"rate":56.7,"source":"지역","n":294}}},"상가 겸용":{"weighted":54.0,"applied":57.4,"basis":"5년 매각가율","parts":{"1y":{"rate":52.9,"source":"지역","n":147},"3y":{"rate":53.7,"source":"지역","n":171},"5y":{"rate":57.4,"source":"지역","n":183}}}},"세종":{"아파트":{"weighted":84.6,"applied":84.6,"basis":"가중평균","parts":{"1y":{"rate":86.7,"source":"지역","n":158},"3y":{"rate":83.3,"source":"지역","n":426},"5y":{"rate":81.1,"source":"지역","n":528}}},"단독주택":{"weighted":55.2,"applied":57.5,"basis":"5년 매각가율","parts":{"1y":{"rate":55.6,"source":"전국","n":1076},"3y":{"rate":53.0,"source":"지역 소계","n":43},"5y":{"rate":57.5,"source":"지역","n":37}}},"다가구주택":{"weighted":58.7,"applied":58.7,"basis":"가중평균","parts":{"1y":{"rate":63.2,"source":"전국","n":511},"3y":{"rate":53.0,"source":"지역 소계","n":43},"5y":{"rate":55.9,"source":"지역 소계","n":54}}},"단독·다가구 겸용":{"weighted":56.9,"applied":56.9,"basis":"가중평균","parts":{"1y":{"rate":59.7,"source":"전국","n":1937},"3y":{"rate":53.0,"source":"지역 소계","n":43},"5y":{"rate":55.9,"source":"지역 소계","n":54}}},"연립·다세대":{"weighted":57.9,"applied":57.9,"basis":"가중평균","parts":{"1y":{"rate":66.4,"source":"전국","n":15535},"3y":{"rate":49.4,"source":"지역","n":72},"5y":{"rate":49.4,"source":"지역","n":75}}},"대지":{"weighted":45.9,"applied":52.9,"basis":"5년 매각가율","parts":{"1y":{"rate":42.6,"source":"지역 소계","n":128},"3y":{"rate":46.7,"source":"지역","n":42},"5y":{"rate":52.9,"source":"지역","n":56}}},"임야":{"weighted":45.5,"applied":49.8,"basis":"5년 매각가율","parts":{"1y":{"rate":42.6,"source":"지역 소계","n":128},"3y":{"rate":47.6,"source":"지역","n":65},"5y":{"rate":49.8,"source":"지역","n":104}}},"전·답":{"weighted":47.7,"applied":53.5,"basis":"5년 매각가율","parts":{"1y":{"rate":45.5,"source":"지역","n":62},"3y":{"rate":47.4,"source":"지역","n":139},"5y":{"rate":53.5,"source":"지역","n":187}}},"토지 겸용":{"weighted":43.8,"applied":43.8,"basis":"가중평균","parts":{"1y":{"rate":42.6,"source":"지역 소계","n":128},"3y":{"rate":46.2,"source":"지역 소계","n":274},"5y":{"rate":43.1,"source":"지역","n":31}}},"상가":{"weighted":42.4,"applied":53.3,"basis":"5년 매각가율","parts":{"1y":{"rate":38.6,"source":"지역 소계","n":233},"3y":{"rate":41.6,"source":"지역 소계","n":444},"5y":{"rate":53.3,"source":"지역","n":81}}},"오피스텔":{"weighted":60.3,"applied":82.0,"basis":"5년 매각가율","parts":{"1y":{"rate":38.6,"source":"지역 소계","n":233},"3y":{"rate":81.9,"source":"지역","n":47},"5y":{"rate":82.0,"source":"지역","n":50}}},"근린시설":{"weighted":39.0,"applied":44.0,"basis":"5년 매각가율","parts":{"1y":{"rate":36.3,"source":"지역","n":67},"3y":{"rate":40.2,"source":"지역","n":203},"5y":{"rate":44.0,"source":"지역","n":273}}},"상가 겸용":{"weighted":39.3,"applied":40.7,"basis":"5년 매각가율","parts":{"1y":{"rate":38.0,"source":"지역","n":144},"3y":{"rate":40.6,"source":"지역","n":170},"5y":{"rate":40.7,"source":"지역","n":171}}}},"전북":{"아파트":{"weighted":80.5,"applied":81.1,"basis":"5년 매각가율","parts":{"1y":{"rate":80.9,"source":"지역","n":449},"3y":{"rate":79.6,"source":"지역","n":1696},"5y":{"rate":81.1,"source":"지역","n":2690}}},"단독주택":{"weighted":67.5,"applied":71.3,"basis":"5년 매각가율","parts":{"1y":{"rate":67.7,"source":"지역","n":43},"3y":{"rate":64.5,"source":"지역","n":292},"5y":{"rate":71.3,"source":"지역","n":502}}},"다가구주택":{"weighted":61.4,"applied":66.1,"basis":"5년 매각가율","parts":{"1y":{"rate":58.5,"source":"지역 소계","n":130},"3y":{"rate":63.1,"source":"지역","n":98},"5y":{"rate":66.1,"source":"지역","n":149}}},"단독·다가구 겸용":{"weighted":59.1,"applied":61.6,"basis":"5년 매각가율","parts":{"1y":{"rate":58.2,"source":"지역","n":70},"3y":{"rate":58.8,"source":"지역","n":88},"5y":{"rate":61.6,"source":"지역","n":99}}},"연립·다세대":{"weighted":56.8,"applied":60.0,"basis":"5년 매각가율","parts":{"1y":{"rate":55.8,"source":"지역","n":112},"3y":{"rate":56.4,"source":"지역","n":326},"5y":{"rate":60.0,"source":"지역","n":531}}},"대지":{"weighted":61.8,"applied":73.6,"basis":"5년 매각가율","parts":{"1y":{"rate":57.0,"source":"지역","n":104},"3y":{"rate":62.1,"source":"지역","n":416},"5y":{"rate":73.6,"source":"지역","n":754}}},"임야":{"weighted":49.0,"applied":58.3,"basis":"5년 매각가율","parts":{"1y":{"rate":43.7,"source":"지역","n":128},"3y":{"rate":51.7,"source":"지역","n":571},"5y":{"rate":58.3,"source":"지역","n":1006}}},"전·답":{"weighted":56.3,"applied":62.8,"basis":"5년 매각가율","parts":{"1y":{"rate":53.8,"source":"지역","n":514},"3y":{"rate":56.0,"source":"지역","n":1744},"5y":{"rate":62.8,"source":"지역","n":2862}}},"토지 겸용":{"weighted":57.1,"applied":62.0,"basis":"5년 매각가율","parts":{"1y":{"rate":55.2,"source":"지역","n":57},"3y":{"rate":57.1,"source":"지역","n":84},"5y":{"rate":62.0,"source":"지역","n":176}}},"상가":{"weighted":42.6,"applied":50.4,"basis":"5년 매각가율","parts":{"1y":{"rate":37.6,"source":"지역 소계","n":262},"3y":{"rate":45.9,"source":"지역","n":124},"5y":{"rate":50.4,"source":"지역","n":205}}},"오피스텔":{"weighted":50.0,"applied":64.4,"basis":"5년 매각가율","parts":{"1y":{"rate":37.6,"source":"지역 소계","n":262},"3y":{"rate":61.1,"source":"지역","n":38},"5y":{"rate":64.4,"source":"지역","n":57}}},"근린시설":{"weighted":43.0,"applied":49.3,"basis":"5년 매각가율","parts":{"1y":{"rate":38.9,"source":"지역","n":100},"3y":{"rate":45.8,"source":"지역","n":437},"5y":{"rate":49.3,"source":"지역","n":589}}},"상가 겸용":{"weighted":39.3,"applied":45.1,"basis":"5년 매각가율","parts":{"1y":{"rate":35.7,"source":"지역","n":142},"3y":{"rate":41.4,"source":"지역","n":181},"5y":{"rate":45.1,"source":"지역","n":225}}}},"광주전남":{"아파트":{"weighted":78.1,"applied":79.2,"basis":"5년 매각가율","parts":{"1y":{"rate":77.6,"source":"지역","n":1269},"3y":{"rate":78.2,"source":"지역","n":3315},"5y":{"rate":79.2,"source":"지역","n":4522}}},"단독주택":{"weighted":60.2,"applied":68.9,"basis":"5년 매각가율","parts":{"1y":{"rate":55.2,"source":"지역","n":140},"3y":{"rate":62.6,"source":"지역","n":558},"5y":{"rate":68.9,"source":"지역","n":949}}},"다가구주택":{"weighted":61.8,"applied":67.7,"basis":"5년 매각가율","parts":{"1y":{"rate":57.0,"source":"지역 소계","n":291},"3y":{"rate":65.8,"source":"지역","n":55},"5y":{"rate":67.7,"source":"지역","n":91}}},"단독·다가구 겸용":{"weighted":58.6,"applied":59.3,"basis":"5년 매각가율","parts":{"1y":{"rate":58.0,"source":"지역","n":146},"3y":{"rate":59.3,"source":"지역","n":199},"5y":{"rate":59.3,"source":"지역","n":204}}},"연립·다세대":{"weighted":58.8,"applied":62.4,"basis":"5년 매각가율","parts":{"1y":{"rate":57.3,"source":"지역","n":131},"3y":{"rate":58.8,"source":"지역","n":305},"5y":{"rate":62.4,"source":"지역","n":456}}},"대지":{"weighted":51.6,"applied":57.5,"basis":"5년 매각가율","parts":{"1y":{"rate":47.8,"source":"지역","n":246},"3y":{"rate":54.0,"source":"지역","n":799},"5y":{"rate":57.5,"source":"지역","n":1263}}},"임야":{"weighted":49.9,"applied":59.0,"basis":"5년 매각가율","parts":{"1y":{"rate":45.0,"source":"지역","n":435},"3y":{"rate":52.1,"source":"지역","n":1268},"5y":{"rate":59.0,"source":"지역","n":2143}}},"전·답":{"weighted":59.8,"applied":65.1,"basis":"5년 매각가율","parts":{"1y":{"rate":57.8,"source":"지역","n":1100},"3y":{"rate":59.6,"source":"지역","n":3190},"5y":{"rate":65.1,"source":"지역","n":5026}}},"토지 겸용":{"weighted":52.5,"applied":57.7,"basis":"5년 매각가율","parts":{"1y":{"rate":50.6,"source":"지역","n":138},"3y":{"rate":52.2,"source":"지역","n":172},"5y":{"rate":57.7,"source":"지역","n":254}}},"상가":{"weighted":48.8,"applied":53.1,"basis":"5년 매각가율","parts":{"1y":{"rate":47.2,"source":"지역 소계","n":667},"3y":{"rate":48.7,"source":"지역","n":211},"5y":{"rate":53.1,"source":"지역","n":307}}},"오피스텔":{"weighted":53.2,"applied":58.0,"basis":"5년 매각가율","parts":{"1y":{"rate":49.7,"source":"지역","n":150},"3y":{"rate":55.8,"source":"지역","n":406},"5y":{"rate":58.0,"source":"지역","n":465}}},"근린시설":{"weighted":47.1,"applied":50.6,"basis":"5년 매각가율","parts":{"1y":{"rate":46.6,"source":"지역","n":172},"3y":{"rate":45.5,"source":"지역","n":556},"5y":{"rate":50.6,"source":"지역","n":736}}},"상가 겸용":{"weighted":49.3,"applied":51.9,"basis":"5년 매각가율","parts":{"1y":{"rate":47.7,"source":"지역","n":319},"3y":{"rate":50.2,"source":"지역","n":365},"5y":{"rate":51.9,"source":"지역","n":448}}}},"경북":{"아파트":{"weighted":77.3,"applied":79.1,"basis":"5년 매각가율","parts":{"1y":{"rate":76.7,"source":"지역","n":680},"3y":{"rate":77.2,"source":"지역","n":1969},"5y":{"rate":79.1,"source":"지역","n":3600}}},"단독주택":{"weighted":54.2,"applied":61.0,"basis":"5년 매각가율","parts":{"1y":{"rate":50.3,"source":"지역","n":111},"3y":{"rate":56.2,"source":"지역","n":553},"5y":{"rate":61.0,"source":"지역","n":876}}},"다가구주택":{"weighted":54.3,"applied":58.0,"basis":"5년 매각가율","parts":{"1y":{"rate":51.9,"source":"지역","n":58},"3y":{"rate":55.9,"source":"지역","n":219},"5y":{"rate":58.0,"source":"지역","n":330}}},"단독·다가구 겸용":{"weighted":50.4,"applied":51.8,"basis":"5년 매각가율","parts":{"1y":{"rate":49.5,"source":"지역","n":213},"3y":{"rate":51.0,"source":"지역","n":276},"5y":{"rate":51.8,"source":"지역","n":293}}},"연립·다세대":{"weighted":57.5,"applied":60.7,"basis":"5년 매각가율","parts":{"1y":{"rate":55.4,"source":"지역","n":208},"3y":{"rate":58.8,"source":"지역","n":534},"5y":{"rate":60.7,"source":"지역","n":906}}},"대지":{"weighted":48.7,"applied":58.2,"basis":"5년 매각가율","parts":{"1y":{"rate":43.1,"source":"지역","n":226},"3y":{"rate":51.7,"source":"지역","n":685},"5y":{"rate":58.2,"source":"지역","n":1145}}},"임야":{"weighted":42.0,"applied":53.9,"basis":"5년 매각가율","parts":{"1y":{"rate":36.2,"source":"지역","n":425},"3y":{"rate":43.7,"source":"지역","n":1358},"5y":{"rate":53.9,"source":"지역","n":2259}}},"전·답":{"weighted":43.7,"applied":50.8,"basis":"5년 매각가율","parts":{"1y":{"rate":39.9,"source":"지역","n":1088},"3y":{"rate":45.4,"source":"지역","n":3419},"5y":{"rate":50.8,"source":"지역","n":5306}}},"토지 겸용":{"weighted":46.3,"applied":49.8,"basis":"5년 매각가율","parts":{"1y":{"rate":44.5,"source":"지역","n":246},"3y":{"rate":47.1,"source":"지역","n":346},"5y":{"rate":49.8,"source":"지역","n":402}}},"상가":{"weighted":46.2,"applied":47.6,"basis":"5년 매각가율","parts":{"1y":{"rate":49.0,"source":"지역 소계","n":284},"3y":{"rate":40.6,"source":"지역","n":65},"5y":{"rate":47.6,"source":"지역","n":120}}},"오피스텔":{"weighted":60.3,"applied":60.3,"basis":"가중평균","parts":{"1y":{"rate":62.0,"source":"지역","n":31},"3y":{"rate":58.8,"source":"지역","n":171},"5y":{"rate":58.3,"source":"지역","n":324}}},"근린시설":{"weighted":50.7,"applied":54.3,"basis":"5년 매각가율","parts":{"1y":{"rate":48.3,"source":"지역","n":101},"3y":{"rate":52.3,"source":"지역","n":396},"5y":{"rate":54.3,"source":"지역","n":527}}},"상가 겸용":{"weighted":49.8,"applied":51.4,"basis":"5년 매각가율","parts":{"1y":{"rate":49.5,"source":"지역","n":149},"3y":{"rate":49.2,"source":"지역","n":207},"5y":{"rate":51.4,"source":"지역","n":254}}}},"대구":{"아파트":{"weighted":80.3,"applied":80.3,"basis":"가중평균","parts":{"1y":{"rate":80.6,"source":"지역","n":988},"3y":{"rate":80.3,"source":"지역","n":2758},"5y":{"rate":79.6,"source":"지역","n":3490}}},"단독주택":{"weighted":53.4,"applied":63.0,"basis":"5년 매각가율","parts":{"1y":{"rate":47.7,"source":"지역","n":31},"3y":{"rate":56.6,"source":"지역","n":192},"5y":{"rate":63.0,"source":"지역","n":272}}},"다가구주택":{"weighted":56.0,"applied":62.3,"basis":"5년 매각가율","parts":{"1y":{"rate":51.5,"source":"지역","n":41},"3y":{"rate":59.2,"source":"지역","n":147},"5y":{"rate":62.3,"source":"지역","n":186}}},"단독·다가구 겸용":{"weighted":51.2,"applied":51.7,"basis":"5년 매각가율","parts":{"1y":{"rate":51.1,"source":"지역","n":127},"3y":{"rate":51.2,"source":"지역","n":159},"5y":{"rate":51.7,"source":"지역","n":168}}},"연립·다세대":{"weighted":59.3,"applied":62.5,"basis":"5년 매각가율","parts":{"1y":{"rate":59.3,"source":"지역","n":93},"3y":{"rate":57.1,"source":"지역","n":276},"5y":{"rate":62.5,"source":"지역","n":422}}},"대지":{"weighted":52.5,"applied":61.4,"basis":"5년 매각가율","parts":{"1y":{"rate":46.4,"source":"지역","n":55},"3y":{"rate":56.9,"source":"지역","n":169},"5y":{"rate":61.4,"source":"지역","n":246}}},"임야":{"weighted":41.8,"applied":50.4,"basis":"5년 매각가율","parts":{"1y":{"rate":37.6,"source":"지역","n":32},"3y":{"rate":43.2,"source":"지역","n":84},"5y":{"rate":50.4,"source":"지역","n":134}}},"전·답":{"weighted":42.3,"applied":49.1,"basis":"5년 매각가율","parts":{"1y":{"rate":38.4,"source":"지역","n":124},"3y":{"rate":44.4,"source":"지역","n":312},"5y":{"rate":49.1,"source":"지역","n":401}}},"토지 겸용":{"weighted":46.1,"applied":49.4,"basis":"5년 매각가율","parts":{"1y":{"rate":44.8,"source":"지역","n":38},"3y":{"rate":46.2,"source":"지역","n":50},"5y":{"rate":49.4,"source":"지역","n":56}}},"상가":{"weighted":50.0,"applied":53.5,"basis":"5년 매각가율","parts":{"1y":{"rate":46.1,"source":"지역 소계","n":346},"3y":{"rate":54.1,"source":"지역","n":77},"5y":{"rate":53.5,"source":"지역","n":121}}},"오피스텔":{"weighted":64.7,"applied":64.7,"basis":"가중평균","parts":{"1y":{"rate":64.3,"source":"지역","n":51},"3y":{"rate":66.0,"source":"지역","n":138},"5y":{"rate":63.5,"source":"지역","n":198}}},"근린시설":{"weighted":50.9,"applied":58.3,"basis":"5년 매각가율","parts":{"1y":{"rate":45.7,"source":"지역","n":85},"3y":{"rate":54.5,"source":"지역","n":314},"5y":{"rate":58.3,"source":"지역","n":387}}},"상가 겸용":{"weighted":46.3,"applied":48.2,"basis":"5년 매각가율","parts":{"1y":{"rate":44.9,"source":"지역","n":206},"3y":{"rate":47.3,"source":"지역","n":237},"5y":{"rate":48.2,"source":"지역","n":307}}}},"경남":{"아파트":{"weighted":77.0,"applied":78.2,"basis":"5년 매각가율","parts":{"1y":{"rate":77.3,"source":"지역","n":1316},"3y":{"rate":75.8,"source":"지역","n":3840},"5y":{"rate":78.2,"source":"지역","n":6037}}},"단독주택":{"weighted":48.8,"applied":57.3,"basis":"5년 매각가율","parts":{"1y":{"rate":44.4,"source":"지역","n":162},"3y":{"rate":50.6,"source":"지역","n":780},"5y":{"rate":57.3,"source":"지역","n":1305}}},"다가구주택":{"weighted":51.0,"applied":54.6,"basis":"5년 매각가율","parts":{"1y":{"rate":49.5,"source":"지역","n":42},"3y":{"rate":51.1,"source":"지역","n":173},"5y":{"rate":54.6,"source":"지역","n":304}}},"단독·다가구 겸용":{"weighted":47.8,"applied":49.0,"basis":"5년 매각가율","parts":{"1y":{"rate":46.9,"source":"지역","n":259},"3y":{"rate":48.4,"source":"지역","n":310},"5y":{"rate":49.0,"source":"지역","n":318}}},"연립·다세대":{"weighted":49.2,"applied":54.5,"basis":"5년 매각가율","parts":{"1y":{"rate":46.0,"source":"지역","n":246},"3y":{"rate":50.9,"source":"지역","n":692},"5y":{"rate":54.5,"source":"지역","n":1204}}},"대지":{"weighted":48.5,"applied":56.4,"basis":"5년 매각가율","parts":{"1y":{"rate":44.7,"source":"지역","n":222},"3y":{"rate":49.5,"source":"지역","n":664},"5y":{"rate":56.4,"source":"지역","n":1083}}},"임야":{"weighted":34.6,"applied":43.3,"basis":"5년 매각가율","parts":{"1y":{"rate":30.8,"source":"지역","n":433},"3y":{"rate":35.1,"source":"지역","n":1154},"5y":{"rate":43.3,"source":"지역","n":1982}}},"전·답":{"weighted":39.0,"applied":47.3,"basis":"5년 매각가율","parts":{"1y":{"rate":34.4,"source":"지역","n":1384},"3y":{"rate":41.1,"source":"지역","n":3489},"5y":{"rate":47.3,"source":"지역","n":5230}}},"토지 겸용":{"weighted":40.2,"applied":45.5,"basis":"5년 매각가율","parts":{"1y":{"rate":36.9,"source":"지역","n":220},"3y":{"rate":42.1,"source":"지역","n":295},"5y":{"rate":45.5,"source":"지역","n":372}}},"상가":{"weighted":43.6,"applied":52.6,"basis":"5년 매각가율","parts":{"1y":{"rate":39.0,"source":"지역 소계","n":718},"3y":{"rate":45.4,"source":"지역","n":139},"5y":{"rate":52.6,"source":"지역","n":198}}},"오피스텔":{"weighted":49.0,"applied":50.3,"basis":"5년 매각가율","parts":{"1y":{"rate":48.3,"source":"지역","n":117},"3y":{"rate":49.3,"source":"지역","n":625},"5y":{"rate":50.3,"source":"지역","n":881}}},"근린시설":{"weighted":41.8,"applied":46.4,"basis":"5년 매각가율","parts":{"1y":{"rate":40.1,"source":"지역","n":265},"3y":{"rate":41.4,"source":"지역","n":976},"5y":{"rate":46.4,"source":"지역","n":1416}}},"상가 겸용":{"weighted":38.2,"applied":39.6,"basis":"5년 매각가율","parts":{"1y":{"rate":37.2,"source":"지역","n":317},"3y":{"rate":38.9,"source":"지역","n":374},"5y":{"rate":39.6,"source":"지역","n":434}}}},"부산":{"아파트":{"weighted":80.0,"applied":80.0,"basis":"가중평균","parts":{"1y":{"rate":81.2,"source":"지역","n":1263},"3y":{"rate":78.7,"source":"지역","n":3896},"5y":{"rate":79.1,"source":"지역","n":5117}}},"단독주택":{"weighted":53.4,"applied":65.0,"basis":"5년 매각가율","parts":{"1y":{"rate":46.5,"source":"지역","n":45},"3y":{"rate":57.2,"source":"지역","n":236},"5y":{"rate":65.0,"source":"지역","n":416}}},"다가구주택":{"weighted":56.2,"applied":61.6,"basis":"5년 매각가율","parts":{"1y":{"rate":52.4,"source":"지역 소계","n":127},"3y":{"rate":59.0,"source":"지역","n":62},"5y":{"rate":61.6,"source":"지역","n":86}}},"단독·다가구 겸용":{"weighted":51.5,"applied":52.5,"basis":"5년 매각가율","parts":{"1y":{"rate":50.7,"source":"지역","n":61},"3y":{"rate":52.2,"source":"지역","n":72},"5y":{"rate":52.5,"source":"지역","n":78}}},"연립·다세대":{"weighted":54.6,"applied":57.3,"basis":"5년 매각가율","parts":{"1y":{"rate":54.1,"source":"지역","n":1038},"3y":{"rate":53.8,"source":"지역","n":1902},"5y":{"rate":57.3,"source":"지역","n":2556}}},"대지":{"weighted":51.2,"applied":60.1,"basis":"5년 매각가율","parts":{"1y":{"rate":45.2,"source":"지역","n":96},"3y":{"rate":55.3,"source":"지역","n":292},"5y":{"rate":60.1,"source":"지역","n":495}}},"임야":{"weighted":32.8,"applied":40.8,"basis":"5년 매각가율","parts":{"1y":{"rate":27.9,"source":"지역","n":49},"3y":{"rate":35.5,"source":"지역","n":123},"5y":{"rate":40.8,"source":"지역","n":227}}},"전·답":{"weighted":46.8,"applied":56.2,"basis":"5년 매각가율","parts":{"1y":{"rate":42.3,"source":"지역","n":66},"3y":{"rate":48.0,"source":"지역","n":193},"5y":{"rate":56.2,"source":"지역","n":286}}},"토지 겸용":{"weighted":45.1,"applied":48.2,"basis":"5년 매각가율","parts":{"1y":{"rate":41.8,"source":"지역 소계","n":227},"3y":{"rate":48.5,"source":"지역 소계","n":630},"5y":{"rate":48.2,"source":"지역","n":31}}},"상가":{"weighted":50.3,"applied":51.1,"basis":"5년 매각가율","parts":{"1y":{"rate":52.8,"source":"지역 소계","n":1996},"3y":{"rate":45.5,"source":"지역","n":53},"5y":{"rate":51.1,"source":"지역","n":104}}},"오피스텔":{"weighted":57.5,"applied":60.1,"basis":"5년 매각가율","parts":{"1y":{"rate":56.0,"source":"지역","n":1215},"3y":{"rate":58.3,"source":"지역","n":2110},"5y":{"rate":60.1,"source":"지역","n":2582}}},"근린시설":{"weighted":51.7,"applied":57.8,"basis":"5년 매각가율","parts":{"1y":{"rate":48.0,"source":"지역","n":169},"3y":{"rate":53.9,"source":"지역","n":510},"5y":{"rate":57.8,"source":"지역","n":681}}},"상가 겸용":{"weighted":54.4,"applied":54.8,"basis":"5년 매각가율","parts":{"1y":{"rate":54.8,"source":"지역","n":597},"3y":{"rate":53.4,"source":"지역","n":671},"5y":{"rate":54.8,"source":"지역","n":709}}}},"울산":{"아파트":{"weighted":84.1,"applied":84.1,"basis":"가중평균","parts":{"1y":{"rate":85.2,"source":"지역","n":331},"3y":{"rate":83.0,"source":"지역","n":1058},"5y":{"rate":83.0,"source":"지역","n":1687}}},"단독주택":{"weighted":57.1,"applied":59.5,"basis":"5년 매각가율","parts":{"1y":{"rate":55.1,"source":"지역 소계","n":74},"3y":{"rate":59.0,"source":"지역","n":87},"5y":{"rate":59.5,"source":"지역","n":153}}},"다가구주택":{"weighted":56.6,"applied":59.2,"basis":"5년 매각가율","parts":{"1y":{"rate":55.1,"source":"지역 소계","n":74},"3y":{"rate":57.4,"source":"지역 소계","n":188},"5y":{"rate":59.2,"source":"지역","n":46}}},"단독·다가구 겸용":{"weighted":56.1,"applied":56.8,"basis":"5년 매각가율","parts":{"1y":{"rate":55.8,"source":"지역","n":60},"3y":{"rate":56.1,"source":"지역","n":73},"5y":{"rate":56.8,"source":"지역","n":76}}},"연립·다세대":{"weighted":64.5,"applied":65.6,"basis":"5년 매각가율","parts":{"1y":{"rate":64.7,"source":"지역","n":67},"3y":{"rate":63.6,"source":"지역","n":200},"5y":{"rate":65.6,"source":"지역","n":295}}},"대지":{"weighted":45.0,"applied":53.2,"basis":"5년 매각가율","parts":{"1y":{"rate":39.6,"source":"지역","n":38},"3y":{"rate":48.4,"source":"지역","n":122},"5y":{"rate":53.2,"source":"지역","n":206}}},"임야":{"weighted":43.3,"applied":45.1,"basis":"5년 매각가율","parts":{"1y":{"rate":43.4,"source":"지역","n":76},"3y":{"rate":41.9,"source":"지역","n":223},"5y":{"rate":45.1,"source":"지역","n":375}}},"전·답":{"weighted":44.8,"applied":50.1,"basis":"5년 매각가율","parts":{"1y":{"rate":41.9,"source":"지역","n":92},"3y":{"rate":46.0,"source":"지역","n":290},"5y":{"rate":50.1,"source":"지역","n":445}}},"토지 겸용":{"weighted":43.3,"applied":45.5,"basis":"5년 매각가율","parts":{"1y":{"rate":41.9,"source":"지역 소계","n":229},"3y":{"rate":44.1,"source":"지역","n":30},"5y":{"rate":45.5,"source":"지역","n":32}}},"상가":{"weighted":50.8,"applied":55.6,"basis":"5년 매각가율","parts":{"1y":{"rate":49.1,"source":"지역 소계","n":357},"3y":{"rate":50.4,"source":"지역 소계","n":711},"5y":{"rate":55.6,"source":"지역 소계","n":860}}},"오피스텔":{"weighted":61.3,"applied":61.3,"basis":"가중평균","parts":{"1y":{"rate":62.3,"source":"지역","n":145},"3y":{"rate":60.4,"source":"지역","n":282},"5y":{"rate":60.2,"source":"지역","n":336}}},"근린시설":{"weighted":47.2,"applied":56.6,"basis":"5년 매각가율","parts":{"1y":{"rate":42.8,"source":"지역","n":63},"3y":{"rate":48.4,"source":"지역","n":243},"5y":{"rate":56.6,"source":"지역","n":322}}},"상가 겸용":{"weighted":49.2,"applied":49.8,"basis":"5년 매각가율","parts":{"1y":{"rate":49.0,"source":"지역","n":147},"3y":{"rate":49.2,"source":"지역","n":178},"5y":{"rate":49.8,"source":"지역","n":191}}}},"제주":{"아파트":{"weighted":80.0,"applied":80.0,"basis":"가중평균","parts":{"1y":{"rate":81.2,"source":"지역","n":66},"3y":{"rate":78.0,"source":"지역","n":291},"5y":{"rate":79.8,"source":"지역","n":416}}},"단독주택":{"weighted":52.9,"applied":60.2,"basis":"5년 매각가율","parts":{"1y":{"rate":49.3,"source":"지역","n":96},"3y":{"rate":54.0,"source":"지역","n":260},"5y":{"rate":60.2,"source":"지역","n":373}}},"다가구주택":{"weighted":53.2,"applied":58.7,"basis":"5년 매각가율","parts":{"1y":{"rate":50.5,"source":"지역 소계","n":192},"3y":{"rate":53.9,"source":"지역 소계","n":384},"5y":{"rate":58.7,"source":"지역 소계","n":501}}},"단독·다가구 겸용":{"weighted":52.3,"applied":53.4,"basis":"5년 매각가율","parts":{"1y":{"rate":51.2,"source":"지역","n":93},"3y":{"rate":53.4,"source":"지역","n":112},"5y":{"rate":53.4,"source":"지역","n":112}}},"연립·다세대":{"weighted":62.5,"applied":67.2,"basis":"5년 매각가율","parts":{"1y":{"rate":59.9,"source":"지역","n":232},"3y":{"rate":63.8,"source":"지역","n":622},"5y":{"rate":67.2,"source":"지역","n":903}}},"대지":{"weighted":46.6,"applied":51.7,"basis":"5년 매각가율","parts":{"1y":{"rate":46.0,"source":"지역","n":63},"3y":{"rate":44.1,"source":"지역","n":175},"5y":{"rate":51.7,"source":"지역","n":241}}},"임야":{"weighted":44.0,"applied":50.4,"basis":"5년 매각가율","parts":{"1y":{"rate":40.6,"source":"지역","n":156},"3y":{"rate":45.5,"source":"지역","n":473},"5y":{"rate":50.4,"source":"지역","n":728}}},"전·답":{"weighted":42.2,"applied":47.8,"basis":"5년 매각가율","parts":{"1y":{"rate":39.1,"source":"지역","n":365},"3y":{"rate":43.7,"source":"지역","n":856},"5y":{"rate":47.8,"source":"지역","n":1138}}},"토지 겸용":{"weighted":44.8,"applied":48.1,"basis":"5년 매각가율","parts":{"1y":{"rate":42.8,"source":"지역","n":86},"3y":{"rate":45.8,"source":"지역","n":91},"5y":{"rate":48.1,"source":"지역","n":115}}},"상가":{"weighted":51.1,"applied":55.4,"basis":"5년 매각가율","parts":{"1y":{"rate":48.3,"source":"지역 소계","n":238},"3y":{"rate":52.9,"source":"지역 소계","n":510},"5y":{"rate":55.4,"source":"지역 소계","n":709}}},"오피스텔":{"weighted":59.9,"applied":64.4,"basis":"5년 매각가율","parts":{"1y":{"rate":57.3,"source":"지역","n":96},"3y":{"rate":61.3,"source":"지역","n":223},"5y":{"rate":64.4,"source":"지역","n":391}}},"근린시설":{"weighted":51.5,"applied":55.9,"basis":"5년 매각가율","parts":{"1y":{"rate":48.3,"source":"지역 소계","n":238},"3y":{"rate":53.8,"source":"지역","n":118},"5y":{"rate":55.9,"source":"지역","n":144}}},"상가 겸용":{"weighted":45.9,"applied":46.8,"basis":"5년 매각가율","parts":{"1y":{"rate":45.1,"source":"지역","n":113},"3y":{"rate":46.6,"source":"지역","n":168},"5y":{"rate":46.8,"source":"지역","n":171}}}}}}/*END*/;
 
-// 최우선변제금 (원). 지역 구분 이름은 주택임대차보호법 시행령 기준이며, 상가는 가장 가까운 구간을 대응시켰다.
-const TIERS = [
-  { id: "seoul", name: "서울특별시", house: 55000000, shop: 22000000 },
-  { id: "dense", name: "과밀억제권역(서울 제외)·세종·용인·화성·김포", house: 48000000, shop: 19000000 },
-  { id: "metro", name: "광역시·안산·광주(경기)·파주·이천·평택", house: 28000000, shop: 13000000 },
-  { id: "other", name: "그 밖의 지역", house: 25000000, shop: 10000000 },
-];
-const TIER_BY_REGION = {
-  서울: ["seoul", ""],
-  세종: ["dense", ""],
-  인천: ["dense", "인천은 대부분 과밀억제권역이지만 강화·옹진 등 일부는 다릅니다. 주소에 맞게 확인하세요."],
-  경기: ["dense", "경기는 시·군마다 구분이 다릅니다. 주소에 맞게 꼭 확인하세요."],
-  부산: ["metro", ""], 대구: ["metro", ""], 대전: ["metro", ""], 울산: ["metro", "광역시 안의 군 지역은 '그 밖의 지역'일 수 있습니다."],
-  광주전남: ["other", "광주광역시 주소라면 '광역시'를 고르세요."],
-};
+const RULES = window.LOAN_RULES;
+const TIERS = RULES.smallDepositTiers;
+const TIER_BY_REGION = RULES.smallDepositTierByRegion;
 // 용도별 기본 호수 [주택, 상가]와 안내
 const UNIT_DEFAULTS = {
   "아파트": [1, 0, ""],
@@ -325,30 +406,6 @@ const UNIT_DEFAULTS = {
   "근린시설": [0, 1, "근린시설 안에 주택이 있다면 주택 호수도 입력하세요."],
   "상가 겸용": [1, 1, "주택 부분과 상가 부분의 호실 수를 각각 입력하세요."],
 };
-
-// 현행 LTV 정책 (2026.10 조사 기준)
-const HOUSING = ["아파트", "단독주택", "다가구주택", "단독·다가구 겸용", "연립·다세대"];
-const CAPITAL_AREA = ["서울", "경기", "인천"];
-const GG_REGULATED = ["과천시", "광명시", "성남시 분당구", "성남시 수정구", "성남시 중원구", "수원시 영통구", "수원시 장안구",
-  "수원시 팔달구", "안양시 동안구", "용인시 수지구", "의왕시", "하남시", "화성시 동탄구", "용인시 기흥구", "구리시"];
-const LTV = { regulated: { general: 40, first: 70 }, normal: { general: 70, first: 80 }, nonHousing: 70 };
-function purchaseCap(price) { return price <= 15e8 ? 6e8 : price <= 25e8 ? 4e8 : 2e8; }
-
-function ltvPolicy() {
-  const region = $("region").value, use = $("use").value;
-  if (!HOUSING.includes(use)) return { ltv: LTV.nonHousing, label: "비주택", why: "토지·상가 등 비주택 담보는 기본 70%로 두었습니다.", regulated: false };
-  let regulated = false, where = `${region}은 규제지역이 아닙니다`;
-  if (region === "서울") { regulated = true; where = "서울은 전역이 규제지역입니다"; }
-  if (region === "경기") {
-    const d = $("district").value;
-    regulated = GG_REGULATED.includes(d);
-    where = regulated ? `${d}는 규제지역입니다` : "선택한 경기 지역은 규제지역이 아닙니다";
-  }
-  const type = $("borrower").value;
-  const ltv = (regulated ? LTV.regulated : LTV.normal)[type];
-  return { ltv, regulated, label: regulated ? "규제지역" : "비규제지역",
-    why: `${where}. ${type === "first" ? "생애최초 구입" : "일반"} 기준 ${ltv}%.` };
-}
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.round(n).toLocaleString("ko-KR");
@@ -410,52 +467,60 @@ function render() {
     (fallback ? " 표본이 30건 미만인 기간은 상위 분류나 전국 값으로 대체했습니다." : "");
   $("rate-chip").classList.toggle("warn", fallback);
 
-  // LTV
-  const isHousing = HOUSING.includes(use);
-  $("district-field").hidden = !(region === "경기" && isHousing);
-  const pol = ltvPolicy();
-  const ltvOverride = $("ltv-override").checked;
-  const ltv = ltvOverride ? Number($("ltv-manual").value) || 0 : pol.ltv;
-  $("ltv-auto").textContent = pol.ltv + "%";
-  $("ltv-chip").textContent = pol.label;
-  $("ltv-chip").classList.toggle("warn", pol.regulated);
-  $("ltv-detail").textContent = pol.why;
+  // 대출 규제 계산 (loanLimit.js)
+  const isHousing = RULES.housingUses.includes(use);
+  const regulatedList = RULES.regulatedAreas[region];
+  $("district-field").hidden = !Array.isArray(regulatedList);
+  const homes = $("homes").value;
+  $("first-time").disabled = homes !== "noHome";
+  const r = LoanLimit.calcLoanLimit({
+    region, district: $("district").value, use, price, auctionRate: rate / 100,
+    ltvOverride: $("ltv-override").checked ? (Number($("ltv-manual").value) || 0) / 100 : null,
+    homes, firstTimeBuyer: $("first-time").checked, purpose: $("purpose").value,
+    annualIncome: parseMoney($("income").value), existingAnnualPayment: parseMoney($("existing").value),
+    sector: $("sector").value, rateType: $("rate-type").value,
+    rate: (Number($("loan-rate").value) || 0) / 100, years: Number($("years").value) || 0,
+    policyMortgage: $("policy-mortgage").checked, creditLoanTotal: parseMoney($("credit").value),
+    jeonse: { has: $("jeonse").checked, inCapitalOrRegulated: $("jeonse-capital").checked,
+      policy: $("jeonse-policy").checked, annualInterest: parseMoney($("jeonse-interest").value) },
+    depositTier: tier.id, houseUnits: hu, shopUnits: su,
+  }, RULES);
 
-  // 계산: 적용 비율 = min(낙찰가율, LTV)
-  const ratio = Math.min(rate, ltv);
-  const base = price * ratio / 100;
-  const bid = price * rate / 100;
-  const rawDed = hu * tier.house + su * tier.shop;
-  const cap = bid / 2;
-  const ded = Math.min(rawDed, cap);
-  let total = Math.max(0, base - ded);
-  const capApplies = isHousing && $("purchase").checked && (CAPITAL_AREA.includes(region) || pol.regulated);
-  const amtCap = capApplies ? purchaseCap(price) : Infinity;
-  $("l-cap-row").hidden = !(capApplies && total > amtCap);
-  $("l-cap").textContent = fmt(amtCap);
-  $("l-cap-sub").textContent = capApplies ? `주택 구입 목적 · 시가 ${price <= 15e8 ? "15억 이하" : price <= 25e8 ? "15억 초과 25억 이하" : "25억 초과"}` : "";
-  total = Math.min(total, amtCap);
+  $("location-chip").textContent = r.locationName;
+  $("location-chip").classList.toggle("warn", r.location === "regulated");
+  $("ltv-auto").textContent = Math.round(r.ltv.policyRatio * 100) + "%";
+  $("ltv-detail").textContent = isHousing ? `${r.ltv.why} 기준` : "토지·상가 등 비주택 담보 기준";
 
   $("price-kor").textContent = korMoney(price);
   $("house-amt").textContent = `1호당 ${korMoney(tier.house)}`;
   $("shop-amt").textContent = `1호당 ${korMoney(tier.shop)}`;
-  $("sheet-meta").textContent = `${region} · ${use}`;
+  $("sheet-meta").textContent = `${region} · ${use} · ${r.locationName}`;
   $("l-price").textContent = fmt(price);
   $("l-price-sub").textContent = korMoney(price);
-  $("l-rate").textContent = ratio.toFixed(1) + "%";
-  $("l-rate-sub").textContent = `낙찰가율 ${rate.toFixed(1)}%${override ? " (직접 입력)" : ""} · LTV ${ltv}%${ltvOverride ? " (직접 입력)" : ` (${pol.label})`} → ${rate <= ltv ? "낙찰가율" : "LTV"} 적용`;
-  $("l-bid-sub").textContent = `예상 낙찰가 ${korMoney(bid)}`;
-  $("l-bid").textContent = fmt(base);
+  $("l-rate").textContent = (r.ratio * 100).toFixed(1) + "%";
+  $("l-rate-sub").textContent = `낙찰가율 ${rate.toFixed(1)}%${override ? " (직접 입력)" : ""} · LTV ${Math.round(r.ltv.ratio * 100)}%${r.ltv.overridden ? " (직접 입력)" : ""} → ${r.binding === "auction" || rate / 100 < r.ltv.ratio ? "낙찰가율" : "LTV"} 적용`;
   const parts = [];
   if (hu) parts.push(`주택 ${hu}호 × ${korMoney(tier.house)}`);
   if (su) parts.push(`상가 ${su}호 × ${korMoney(tier.shop)}`);
   $("l-ded-sub").textContent = (parts.join(" + ") || "임차 호실 없음") + ` · ${tier.name}`;
-  $("l-ded").textContent = ded ? fmt(ded) : "0";
-  $("l-total").textContent = fmt(total);
-  $("l-total-kor").textContent = korMoney(total);
+  $("l-ded").textContent = r.deposit.deduction ? fmt(r.deposit.deduction) : "0";
   const alert = $("cap-alert");
-  alert.hidden = rawDed <= cap || rawDed === 0;
-  alert.textContent = `호수 기준 차감액 ${korMoney(rawDed)}이 예상 낙찰가의 절반(${korMoney(cap)})을 넘어 상한까지만 뺐습니다.`;
+  alert.hidden = r.deposit.raw <= r.deposit.cap || r.deposit.raw === 0;
+  alert.textContent = `호수 기준 차감액 ${korMoney(r.deposit.raw)}이 예상 낙찰가의 절반(${korMoney(r.deposit.cap)})을 넘어 상한까지만 뺐습니다.`;
+
+  const setLimit = (id, amount, desc, bind) => {
+    $(id).classList.toggle("bind", bind);
+    $(id).classList.toggle("na", amount == null);
+    $(id + "-v").textContent = amount == null ? "해당 없음" : fmt(amount);
+    $(id + "-d").textContent = desc;
+  };
+  setLimit("lim-collateral", r.collateralLimit, `시가 × ${(r.ratio * 100).toFixed(1)}% − 소액임차보증금`, r.binding === "ltv" || r.binding === "auction");
+  setLimit("lim-cap", r.cap ? r.cap.cap : null, r.cap ? r.cap.why : (isHousing && r.location === "regulated" && $("purpose").value === "livingStability" ? "생활안정자금은 가격 구간 상한 미적용" : "수도권·규제지역 주택구입·이주비에만 적용"), r.binding === "cap");
+  setLimit("lim-dsr", r.dsr.excluded ? null : Math.max(0, r.dsr.limit), r.dsr.why, r.binding === "dsr");
+
+  $("l-total").textContent = fmt(r.finalLimit);
+  $("l-total-kor").textContent = r.binding === "blocked" ? "대출 불가" : korMoney(r.finalLimit);
+  $("msgs").innerHTML = [...r.blocks.map((m) => `<li class="block">${m}</li>`), ...r.warnings.map((m) => `<li class="warn">${m}</li>`)].join("");
 
   renderBars(region, use);
 }
@@ -480,7 +545,7 @@ function renderBars(region, use) {
 }
 
 function applyPreset(p) {
-  $("region").value = p.region; setRegionDefaults();
+  $("region").value = p.region; $("region").dispatchEvent(new Event("change"));
   $("use").value = p.use; setUseDefaults();
   if (p.tier) { $("tier").value = p.tier; }
   $("price").value = fmt(p.price);
@@ -490,9 +555,19 @@ function applyPreset(p) {
   if (p.house != null) $("house-units").value = p.house;
   if (p.shop != null) $("shop-units").value = p.shop;
   $("ltv-override").checked = false; $("ltv-field").hidden = true;
-  $("borrower").value = "general";
   $("district").value = p.district || "기타";
-  $("purchase").checked = !!p.purchase;
+  $("homes").value = p.homes || "noHome";
+  $("first-time").checked = false;
+  $("purpose").value = p.purpose || "purchase";
+  $("income").value = fmt(p.income ?? 6e7);
+  $("existing").value = p.existing ? fmt(p.existing) : "";
+  $("sector").value = p.sector || "bank";
+  $("rate-type").value = "variable";
+  $("loan-rate").value = p.loanRate ?? 4;
+  $("years").value = p.years ?? 30;
+  $("policy-mortgage").checked = false;
+  $("credit").value = "";
+  $("jeonse").checked = false; $("jeonse-fields").hidden = true;
   render();
 }
 
@@ -500,19 +575,31 @@ function init() {
   fill($("region"), RATES.regions.map((r) => [r, r]));
   fill($("use"), RATES.uses.map((u) => [u, u]));
   fill($("tier"), TIERS.map((t) => [t.id, t.name]));
-  fill($("district"), [...GG_REGULATED.map((d) => [d, d + " (규제지역)"]), ["기타", "그 밖의 경기 지역"]]);
+  $("disclaimer").textContent = `본 결과는 참고용이며 실제 한도는 금융기관 심사 및 최신 금융위원회 규정에 따라 달라질 수 있습니다. (규정 기준일: ${RULES.effectiveDate})`;
   $("src-period").textContent = RATES.periods["5y"];
   $("src-min").textContent = RATES.minSold;
   $("tier-table").innerHTML = TIERS.map((t) => `<tr><td>${t.name}</td><td class="n">${fmt(t.house)}원</td><td class="n">${fmt(t.shop)}원</td></tr>`).join("");
 
-  $("region").addEventListener("change", () => { setRegionDefaults(); render(); });
+  const fillDistricts = () => {
+    const list = RULES.regulatedAreas[$("region").value];
+    if (Array.isArray(list)) fill($("district"), [...list.map((d) => [d, d + " (규제지역)"]), ["기타", `그 밖의 ${$("region").value} 지역`]]);
+  };
+  $("region").addEventListener("change", () => { fillDistricts(); setRegionDefaults(); render(); });
   $("use").addEventListener("change", () => { setUseDefaults(); render(); });
   $("tier").addEventListener("change", render);
   ["house-units", "shop-units", "rate-manual", "ltv-manual"].forEach((id) => $(id).addEventListener("input", render));
-  ["district", "borrower", "purchase"].forEach((id) => $(id).addEventListener("change", render));
+  ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-mortgage", "jeonse-capital", "jeonse-policy"]
+    .forEach((id) => $(id).addEventListener("change", render));
+  ["loan-rate", "years"].forEach((id) => $(id).addEventListener("input", render));
+  ["income", "existing", "credit", "jeonse-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
+    const n = parseMoney(e.target.value);
+    e.target.value = n ? fmt(n) : "";
+    render();
+  }));
+  $("jeonse").addEventListener("change", (e) => { $("jeonse-fields").hidden = !e.target.checked; render(); });
   $("ltv-override").addEventListener("change", (e) => {
     $("ltv-field").hidden = !e.target.checked;
-    if (e.target.checked && !$("ltv-manual").value) $("ltv-manual").value = ltvPolicy().ltv;
+    if (e.target.checked && !$("ltv-manual").value) $("ltv-manual").value = $("ltv-auto").textContent.replace("%", "");
     render();
   });
   $("price").addEventListener("input", (e) => {
@@ -528,14 +615,14 @@ function init() {
   $("bars").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-region]");
     if (!b) return;
-    $("region").value = b.dataset.region; setRegionDefaults(); render();
+    $("region").value = b.dataset.region; $("region").dispatchEvent(new Event("change"));
   });
   $("calc").addEventListener("submit", (e) => e.preventDefault());
 
   // 사용자가 준 공식 예시: 1억 × 70% − 2,500만(그 밖의 지역 주택 1호) = 4,500만
   $("preset-formula").addEventListener("click", () => applyPreset({ region: "강원", use: "단독주택", price: 1e8, rate: 70, tier: "other", house: 1, shop: 0 }));
   $("preset-jeju").addEventListener("click", () => applyPreset({ region: "제주", use: "임야", price: 3e8 }));
-  $("preset-apt").addEventListener("click", () => applyPreset({ region: "서울", use: "아파트", price: 18e8, purchase: true }));
+  $("preset-apt").addEventListener("click", () => applyPreset({ region: "서울", use: "아파트", price: 18e8, income: 2e8 }));
   $("preset-seoul").addEventListener("click", () => applyPreset({ region: "서울", use: "근린시설", price: 1e9, house: 0, shop: 3 }));
 
   applyPreset({ region: "강원", use: "단독주택", price: 1e8, rate: 70, tier: "other", house: 1, shop: 0 });

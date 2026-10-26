@@ -1,0 +1,160 @@
+// 실행: node --test tests/
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const rules = require("../loanRules.js");
+const { calcLoanLimit, classifyLocation, annualPayment, principalFromAnnual } = require("../loanLimit.js");
+
+// 기본 입력: 서울 아파트 무주택 주택구입, 소득·DSR 여유 충분, 낙찰가율 90%, 방공제 없음
+function input(over = {}) {
+  return {
+    region: "서울", district: "", use: "아파트", price: 14e8, auctionRate: 0.90, ltvOverride: null,
+    homes: "noHome", firstTimeBuyer: false, purpose: "purchase",
+    annualIncome: 10e8, existingAnnualPayment: 0, sector: "bank", rateType: "variable", rate: 0.04, years: 30,
+    policyMortgage: false, creditLoanTotal: 0,
+    jeonse: { has: false, inCapitalOrRegulated: false, policy: false, annualInterest: 0 },
+    depositTier: "seoul", houseUnits: 0, shopUnits: 0,
+    ...over,
+  };
+}
+const near = (a, b, tol = 1) => assert.ok(Math.abs(a - b) <= tol, `${a} ≠ ${b}`);
+
+test("소재지 구분: 서울·경기 규제 12곳은 규제지역, 그 밖의 수도권, 지방", () => {
+  assert.equal(classifyLocation("서울", "", rules), "regulated");
+  assert.equal(classifyLocation("경기", "과천시", rules), "regulated");
+  assert.equal(classifyLocation("경기", "기타", rules), "unregulatedCapital");
+  assert.equal(classifyLocation("인천", "", rules), "unregulatedCapital");
+  assert.equal(classifyLocation("부산", "", rules), "local");
+});
+
+test("규제지역 무주택 시가 14억: LTV 40% = 5.6억 < 상한 6억 → LTV가 결정", () => {
+  const r = calcLoanLimit(input({ price: 14e8 }), rules);
+  assert.equal(r.collateralLimit, 5.6e8);
+  assert.equal(r.cap.cap, 6e8);
+  assert.equal(r.finalLimit, 5.6e8);
+  assert.equal(r.binding, "ltv");
+});
+
+test("규제지역 무주택 시가 20억: LTV 8억 > 상한 4억 → 상한이 결정", () => {
+  const r = calcLoanLimit(input({ price: 20e8 }), rules);
+  assert.equal(r.collateralLimit, 8e8);
+  assert.equal(r.finalLimit, 4e8);
+  assert.equal(r.binding, "cap");
+});
+
+test("규제지역 무주택 시가 30억: 상한 2억", () => {
+  const r = calcLoanLimit(input({ price: 30e8 }), rules);
+  assert.equal(r.finalLimit, 2e8);
+  assert.equal(r.binding, "cap");
+});
+
+test("규제지역 다주택자 주택구입: 대출 불가", () => {
+  const r = calcLoanLimit(input({ homes: "multiHome" }), rules);
+  assert.equal(r.ltv.ratio, 0);
+  assert.equal(r.finalLimit, 0);
+  assert.equal(r.binding, "blocked");
+  assert.ok(r.blocks.some((m) => m.includes("다주택")));
+});
+
+test("규제지역 처분조건부 1주택 주택구입: LTV 40%", () => {
+  const r = calcLoanLimit(input({ homes: "conditional1Home", price: 10e8 }), rules);
+  assert.equal(r.ltv.ratio, 0.40);
+  assert.equal(r.finalLimit, 4e8);
+});
+
+test("생활안정자금은 가격 구간 상한 미적용 (시가 20억 → LTV 8억)", () => {
+  const r = calcLoanLimit(input({ price: 20e8, purpose: "livingStability" }), rules);
+  assert.equal(r.cap, null);
+  assert.equal(r.finalLimit, 8e8);
+});
+
+test("이주비는 집값과 관계없이 6억 상한 (시가 30억)", () => {
+  const r = calcLoanLimit(input({ price: 30e8, purpose: "relocation" }), rules);
+  assert.equal(r.cap.cap, 6e8);
+  assert.equal(r.finalLimit, 6e8);
+  assert.equal(r.binding, "cap");
+});
+
+test("지방 주택 3억 무주택: LTV 70%, 상한 없음, 스트레스 0.75%", () => {
+  const r = calcLoanLimit(input({ region: "부산", price: 3e8, depositTier: "metro" }), rules);
+  assert.equal(r.location, "local");
+  assert.equal(r.cap, null);
+  assert.equal(r.collateralLimit, 2.1e8);
+  near(r.dsr.stress, 0.0075, 1e-12);
+  assert.equal(r.finalLimit, 2.1e8);
+});
+
+test("비규제 수도권: 스트레스 1.5%, LTV 70%", () => {
+  const r = calcLoanLimit(input({ region: "인천", price: 5e8 }), rules);
+  assert.equal(r.location, "unregulatedCapital");
+  near(r.dsr.stress, 0.015, 1e-12);
+  assert.equal(r.ltv.ratio, 0.70);
+});
+
+test("DSR이 결정: 연소득 5천만, 은행 40%, 4% + 스트레스 3%, 30년", () => {
+  const r = calcLoanLimit(input({ annualIncome: 5e7, price: 14e8 }), rules);
+  const expected = principalFromAnnual(2e7, 0.07, 30);
+  near(r.dsr.limit, expected);
+  near(expected, 250_525_000, 1e5); // 약 2.5억
+  assert.equal(r.binding, "dsr");
+  near(r.finalLimit, expected);
+  // 한도만큼 빌리면 스트레스 금리 기준 DSR이 정확히 40%
+  near(annualPayment(r.finalLimit, 0.07, 30) / 5e7, 0.40, 1e-9);
+});
+
+test("비은행은 DSR 50%라 한도가 더 크다", () => {
+  const bank = calcLoanLimit(input({ annualIncome: 5e7 }), rules);
+  const nonBank = calcLoanLimit(input({ annualIncome: 5e7, sector: "nonBank" }), rules);
+  assert.ok(nonBank.dsr.limit > bank.dsr.limit);
+});
+
+test("고정금리는 스트레스 금리 미적용", () => {
+  const r = calcLoanLimit(input({ rateType: "fixed" }), rules);
+  assert.equal(r.dsr.stress, 0);
+});
+
+test("정책모기지는 DSR 계산 제외", () => {
+  const r = calcLoanLimit(input({ annualIncome: 3e7, policyMortgage: true, price: 5e8 }), rules);
+  assert.equal(r.dsr.excluded, true);
+  assert.equal(r.dsr.limit, null);
+  assert.equal(r.finalLimit, 2e8);
+});
+
+test("기존 대출 상환액이 DSR 한도를 넘으면 추가 여력 0", () => {
+  const r = calcLoanLimit(input({ annualIncome: 5e7, existingAnnualPayment: 2.5e7 }), rules);
+  assert.equal(r.finalLimit, 0);
+  assert.equal(r.binding, "dsr");
+});
+
+test("규제지역 3억 초과 아파트 구입 + 전세대출 보유: 불가", () => {
+  const r = calcLoanLimit(input({ price: 5e8, jeonse: { has: true, inCapitalOrRegulated: true, policy: false, annualInterest: 0 } }), rules);
+  assert.equal(r.finalLimit, 0);
+  assert.ok(r.blocks.some((m) => m.includes("전세대출")));
+});
+
+test("신용대출 1억 초과: 규제지역 주택구입 제한 경고", () => {
+  const r = calcLoanLimit(input({ creditLoanTotal: 1.5e8 }), rules);
+  assert.ok(r.warnings.some((m) => m.includes("신용대출")));
+  const ok = calcLoanLimit(input({ creditLoanTotal: 1e8 }), rules);
+  assert.ok(!ok.warnings.some((m) => m.includes("신용대출")));
+});
+
+test("1주택자 수도권·규제지역 전세대출 이자는 DSR에 포함, 정책 전세대출은 제외", () => {
+  const base = { region: "부산", price: 3e8, homes: "oneHome", purpose: "livingStability", annualIncome: 5e7 };
+  const jeonse = { has: true, inCapitalOrRegulated: true, policy: false, annualInterest: 6e6 };
+  const withJeonse = calcLoanLimit(input({ ...base, jeonse }), rules);
+  assert.equal(withJeonse.dsr.existingAnnual, 6e6);
+  const policy = calcLoanLimit(input({ ...base, jeonse: { ...jeonse, policy: true } }), rules);
+  assert.equal(policy.dsr.existingAnnual, 0);
+  assert.ok(withJeonse.dsr.limit < policy.dsr.limit);
+});
+
+test("낙찰가율이 LTV보다 낮으면 낙찰가율이 결정 (비주택 임야, 낙찰가율 50%)", () => {
+  const r = calcLoanLimit(input({ region: "제주", use: "임야", price: 3e8, auctionRate: 0.504, depositTier: "other" }), rules);
+  assert.equal(r.binding, "auction");
+  near(r.finalLimit, 151_200_000);
+});
+
+test("기존 예시: 1억 × min(70%, 70%) − 2,500만 = 4,500만", () => {
+  const r = calcLoanLimit(input({ region: "강원", use: "단독주택", price: 1e8, auctionRate: 0.70, depositTier: "other", houseUnits: 1 }), rules);
+  near(r.finalLimit, 45_000_000);
+});

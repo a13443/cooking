@@ -1,0 +1,80 @@
+// 대출 규제 수치 모음. 정책이 바뀌면 이 파일의 숫자와 목록만 고치면 된다.
+// 기준: 2025.6.27 / 10.15 대책 (2026년 10월 시행 기준). 비율은 소수(0.40 = 40%), 금액은 원.
+(function (root, factory) {
+  if (typeof module === "object" && module.exports) module.exports = factory();
+  else root.LOAN_RULES = factory();
+})(typeof self !== "undefined" ? self : this, function () {
+  return {
+    effectiveDate: "2026-10",
+
+    // 규제지역(투기과열지구·조정대상지역). 시도 전체면 "*", 일부면 시·군·구 목록.
+    // 2026.7.1 화성시 동탄구·용인시 기흥구·구리시 추가 지정 보도가 있으나 원문을 확인하지 못해 넣지 않았다.
+    regulatedAreas: {
+      서울: "*",
+      경기: ["과천시", "광명시", "성남시 분당구", "성남시 수정구", "성남시 중원구", "수원시 영통구", "수원시 장안구",
+        "수원시 팔달구", "안양시 동안구", "용인시 수지구", "의왕시", "하남시"],
+    },
+    capitalArea: ["서울", "경기", "인천"],
+
+    // 주택담보대출 규제가 적용되는 용도
+    housingUses: ["아파트", "단독주택", "다가구주택", "단독·다가구 겸용", "연립·다세대"],
+    apartmentUses: ["아파트"],
+
+    // 수도권·규제지역 주택구입 목적 주담대 금액 상한 (maxPrice 이하 구간, null은 그 이상 전부)
+    mortgageCap_regulated_purchase: [
+      { maxPrice: 1500000000, cap: 600000000 },
+      { maxPrice: 2500000000, cap: 400000000 },
+      { maxPrice: null, cap: 200000000 },
+    ],
+    relocationLoanCap: 600000000,
+    livingStabilityExemptFromCap: true,
+
+    ltv: {
+      regulated: {
+        noHome: 0.40,
+        conditional1Home: 0.40,
+        oneHome: 0.0, // 처분조건 없는 1주택자의 규제지역 주택구입은 불가로 가정 (확인 필요)
+        multiHome: 0.0,
+        nonPurchase: 0.40, // 생활안정자금·이주비 (확인 필요)
+        firstTimeBuyer: 0.70,
+      },
+      unregulated: { default: 0.70, firstTimeBuyer: 0.80 },
+      nonHousing: 0.70,
+    },
+
+    dsrLimit: { bank: 0.40, nonBank: 0.50 },
+    stressRate: {
+      regulated: 0.030,
+      local: 0.0075,
+      unregulatedCapital: 0.015,
+      localStage3: 0.015, // localStage3Applied가 true일 때 지방에 쓸 값 (확인 필요)
+    },
+    stressRateFlags: { localStage3Applied: false },
+    // 금리 유형별 스트레스 금리 반영 비율. 고정금리는 미적용.
+    // 혼합형·주기형은 일부만 반영되는 것으로 알려졌지만 비율을 확인하지 못해 보수적으로 1.0으로 둔다.
+    stressRateTypeFactor: { variable: 1.0, mixed: 1.0, periodic: 1.0, fixed: 0.0 },
+    policyMortgageExcludedFromDSR: true,
+
+    // 대출 불가·경고 조건
+    jeonseLoanBlockApartmentPrice: 300000000, // 규제지역 이 금액 초과 아파트 구입 + 전세대출 보유 → 불가
+    creditLoanWarnThreshold: 100000000, // 신용대출 이 금액 초과 → 1년간 규제지역 주택구입 제한 경고
+    jeonseInterestInDsrForOneHome: true, // 1주택자의 수도권·규제지역 전세대출 이자를 DSR에 포함 (정책 전세대출 제외)
+
+    // 소액임차보증금 최우선변제금 (주택임대차보호법·상가건물 임대차보호법 시행령, 2023.2.21 개정 기준)
+    smallDepositTiers: [
+      { id: "seoul", name: "서울특별시", house: 55000000, shop: 22000000 },
+      { id: "dense", name: "과밀억제권역(서울 제외)·세종·용인·화성·김포", house: 48000000, shop: 19000000 },
+      { id: "metro", name: "광역시·안산·광주(경기)·파주·이천·평택", house: 28000000, shop: 13000000 },
+      { id: "other", name: "그 밖의 지역", house: 25000000, shop: 10000000 },
+    ],
+    smallDepositTierByRegion: {
+      서울: ["seoul", ""],
+      세종: ["dense", ""],
+      인천: ["dense", "인천은 대부분 과밀억제권역이지만 강화·옹진 등 일부는 다릅니다. 주소에 맞게 확인하세요."],
+      경기: ["dense", "경기는 시·군마다 구분이 다릅니다. 주소에 맞게 꼭 확인하세요."],
+      부산: ["metro", ""], 대구: ["metro", ""], 대전: ["metro", ""], 울산: ["metro", "광역시 안의 군 지역은 '그 밖의 지역'일 수 있습니다."],
+      광주전남: ["other", "광주광역시 주소라면 '광역시'를 고르세요."],
+    },
+    smallDepositCapRatio: 0.5, // 최우선변제 합계는 예상 낙찰가의 이 비율을 넘지 않음
+  };
+});

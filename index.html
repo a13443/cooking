@@ -34,6 +34,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--paper); color: var(--ink); font-family: var(--font-body);
   font-size: 15px; line-height: 1.6;
@@ -126,6 +127,21 @@ button.preset:hover { background: var(--accent-soft); }
 .tips li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; font-size: 13px; }
 .tips li .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 500; text-align: right; }
 .tips li .d { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media print {
+  :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+    --paper: #fff; --sheet: #fff; --ink: #000; --muted: #444; --line: #bbb;
+    --accent: #1d5e63; --accent-soft: #eef4f4; --warn: #7a4f10; --warn-soft: #f6ecd9; --bar: #b9cfcf;
+    color-scheme: light;
+  }
+  .no-print, .actions, section.compare, section.sources, .check:has(#override), .check:has(#ltv-override) { display: none !important; }
+  .wrap { padding-block: 0; gap: 16px; }
+  /* 인쇄는 산정표(결과)를 먼저, 입력 조건을 뒤에 한 열로 */
+  .main { grid-template-columns: 1fr; }
+  .sheet { order: -1; }
+  .limit, .tips li, .ledger tr, .group, .final { break-inside: avoid; }
+  input, select { border-color: var(--line); }
+}
 .disclaimer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; max-width: 80ch; }
 .alert { font-size: 13px; background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 8px 12px; margin: 0; }
 
@@ -158,6 +174,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
 
 <div class="wrap">
   <header>
+    <p class="alert" id="stale" hidden></p>
     <div class="eyebrow">부동산 담보 · 1단계 계산기</div>
     <h1>내 부동산으로 받을 수 있는 예상 대출금액</h1>
     <p class="lede">법원경매 매각가율(5년치)과 LTV 중 낮은 비율로 담보 기준 한도를 구하고, 수도권·규제지역 금액 상한과 소득 대비 DSR 한도까지 비교해 가장 작은 값을 보여줍니다.</p>
@@ -166,7 +183,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
 
   <div class="main">
     <form id="calc" novalidate>
-      <div class="group">
+      <div class="group no-print">
         <h2>예시 불러오기</h2>
         <div class="presets">
           <button type="button" class="preset" id="preset-formula">1억 주택 · 낙찰가율 70%</button>
@@ -380,12 +397,18 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         <span class="total-label">예상 대출가능금액 = min(세 한도)</span>
         <span><span class="total-amt" id="l-total"></span><span class="won" id="l-total-kor"></span></span>
       </div>
+      <p class="hint" id="monthly"></p>
       <ul class="msgs" id="msgs"></ul>
       <div class="tips" id="tips" hidden>
         <h3>한도를 늘리려면 <span class="hint">DSR이 한도를 정했습니다. 조건을 하나씩만 바꿨을 때의 한도입니다.</span></h3>
         <ul id="tips-list"></ul>
       </div>
       <p class="note">감정평가 결과는 반영하지 않았습니다.</p>
+      <div class="actions">
+        <button type="button" class="preset" id="copy-link">계산 조건 링크 복사</button>
+        <button type="button" class="preset" id="print">인쇄 · PDF 저장</button>
+        <span class="hint" id="copy-msg" aria-live="polite"></span>
+      </div>
     </div>
   </div>
 
@@ -562,6 +585,11 @@ function render() {
 
   $("l-total").textContent = fmt(r.finalLimit);
   $("l-total-kor").textContent = r.binding === "blocked" ? "대출 불가" : korMoney(r.finalLimit);
+  const years = loanInput.years;
+  $("monthly").textContent = r.finalLimit > 0 && years > 0
+    ? `이 금액을 빌리면 월 상환액 약 ${fmt(LoanLimit.annualPayment(r.finalLimit, loanInput.rate, years) / 12)}원 (금리 ${(loanInput.rate * 100).toFixed(2)}%, ${years}년 원리금균등, 스트레스 금리 제외)`
+    : "";
+  saveState();
   $("msgs").innerHTML = [...r.blocks.map((m) => `<li class="block">${m}</li>`), ...r.warnings.map((m) => `<li class="warn">${m}</li>`)].join("");
 
   // 역산: DSR이 한도를 정했을 때 조건별로 바뀌는 한도
@@ -599,6 +627,38 @@ function renderBars(region, use) {
       <div class="track"><div class="fill" style="width:${Math.min(100, nat.applied)}%;opacity:.55"></div></div>
       <span class="val">${nat.applied.toFixed(1)}% <small>(${tag(nat)})</small></span>
     </div>`;
+}
+
+// 계산 조건을 주소 뒤(#)에 담아 링크로 공유한다. 입력 칸 id를 그대로 키로 쓴다.
+let restoring = false;
+const stateFields = () => [...$("calc").querySelectorAll("input[id], select[id]")];
+function saveState() {
+  if (restoring) return;
+  const q = new URLSearchParams();
+  for (const el of stateFields()) {
+    if (el.type === "checkbox") { if (el.checked) q.set(el.id, "1"); }
+    else if (el.value !== "") q.set(el.id, el.value);
+  }
+  history.replaceState(null, "", "#" + q.toString());
+}
+function restoreState() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (!q.has("region")) return false;
+  restoring = true;
+  // 시도·용도는 바꿀 때 기본값을 채우므로 먼저 넣고, 나머지 칸으로 덮어쓴다
+  $("region").value = q.get("region"); $("region").dispatchEvent(new Event("change"));
+  if (q.has("use")) { $("use").value = q.get("use"); setUseDefaults(); }
+  for (const el of stateFields()) {
+    if (el.id === "region" || el.id === "use") continue;
+    if (el.type === "checkbox") el.checked = q.get(el.id) === "1";
+    else el.value = q.get(el.id) ?? "";
+  }
+  $("override-field").hidden = !$("override").checked;
+  $("ltv-field").hidden = !$("ltv-override").checked;
+  $("jeonse-fields").hidden = !$("jeonse").checked;
+  restoring = false;
+  render();
+  return true;
 }
 
 function applyPreset(p) {
@@ -683,7 +743,21 @@ function init() {
   $("preset-apt").addEventListener("click", () => applyPreset({ region: "서울", use: "아파트", price: 18e8, income: 2e8 }));
   $("preset-seoul").addEventListener("click", () => applyPreset({ region: "서울", use: "근린시설", price: 1e9, house: 0, shop: 3 }));
 
-  applyPreset({ region: "강원", use: "단독주택", price: 1e8, rate: 70, tier: "other", house: 1, shop: 0 });
+  $("copy-link").addEventListener("click", () => {
+    const done = (msg) => { $("copy-msg").textContent = msg; };
+    if (navigator.clipboard) navigator.clipboard.writeText(location.href).then(() => done("링크를 복사했습니다."), () => done("주소창의 링크를 복사하세요."));
+    else done("주소창의 링크를 복사하세요.");
+  });
+  $("print").addEventListener("click", () => window.print());
+
+  // 규정 기준일이 오래되면 경고
+  const [ey, em] = RULES.effectiveDate.split("-").map(Number);
+  const now = new Date();
+  const months = (now.getFullYear() - ey) * 12 + (now.getMonth() + 1 - em);
+  $("stale").hidden = months < RULES.staleAfterMonths;
+  $("stale").textContent = `대출 규정 기준일(${RULES.effectiveDate})에서 ${months}개월이 지났습니다. 그 사이 규정이 바뀌었을 수 있으니 금융위원회 발표를 확인하세요.`;
+
+  if (!restoreState()) applyPreset({ region: "강원", use: "단독주택", price: 1e8, rate: 70, tier: "other", house: 1, shop: 0 });
 }
 init();
 </script>

@@ -334,3 +334,91 @@ test("비주택 포함 토지거래허가구역 체크: 비주택 LTV 40%", () =
   assert.equal(r.ltv.ratio, 0.40);
   assert.equal(r.collateralLimit, 2e8);
 });
+
+// ---- 임대사업자(RTI)·경매(경락잔금) ----
+// 제주 상가 10억, 낙찰가율 70%, 상가 1호(그 밖의 지역 1,000만), 월세 400만·보증금 5천만, 변동 5%
+function biz(over = {}) {
+  return input({
+    region: "제주", use: "상가", price: 10e8, auctionRate: 0.70, depositTier: "other", houseUnits: 0, shopUnits: 1,
+    borrower: "business", monthlyRent: 4e6, rentDeposit: 5e7, rate: 0.05, ...over,
+  });
+}
+
+test("임대사업자 상가: DSR·가격 구간 상한 없이 RTI 1.5배로 한도", () => {
+  const r = calcLoanLimit(biz(), rules);
+  assert.equal(r.collateralLimit, 6.9e8); // 10억 × 70% − 1,000만
+  assert.equal(r.cap, null);
+  assert.ok(r.dsr.excluded);
+  // 연 임대소득 4,800만 + 5천만 × 2.5% = 4,925만 → ÷ 1.5 ÷ (5% + 스트레스 1%p)
+  near(r.rti.limit, 49.25e6 / 1.5 / 0.06);
+  assert.equal(r.binding, "rti");
+  assert.equal(r.finalLimit, r.rti.limit);
+});
+
+test("임대사업자 고정금리: 스트레스 금리 없음", () => {
+  const r = calcLoanLimit(biz({ rateType: "fixed" }), rules);
+  assert.equal(r.rti.stress, 0);
+  near(r.rti.limit, 49.25e6 / 1.5 / 0.05);
+});
+
+test("RTI: 해당 건물 기존 대출 이자를 빼고 계산", () => {
+  const r = calcLoanLimit(biz({ existingBuildingInterest: 1e7 }), rules);
+  near(r.rti.limit, (49.25e6 / 1.5 - 1e7) / 0.06);
+});
+
+test("RTI 한도가 1억 미만이어도 1억 이하 대출은 RTI 심사 제외", () => {
+  const r = calcLoanLimit(biz({ monthlyRent: 3e5, rentDeposit: 0 }), rules);
+  assert.ok(r.rti.exempt);
+  assert.equal(r.rti.limit, 1e8);
+});
+
+test("RTI 역산: 담보 기준 한도까지 받으려면 필요한 월세, 고정금리 한도", () => {
+  const tips = suggestions(biz(), rules);
+  const rent = tips.find((t) => t.key === "rent");
+  // 6.9억 × 6% × 1.5 = 6,210만 − 보증금 간주 125만 → 월 507.08만 → 만원 올림
+  assert.equal(rent.value, 5080000);
+  assert.equal(rent.amount, 6.9e8);
+  assert.ok(tips.some((t) => t.key === "fixed"));
+});
+
+test("주택 임대사업자: 수도권·규제지역 주택담보대출 금지, 지방 60%", () => {
+  const seoul = calcLoanLimit(input({ borrower: "business", monthlyRent: 3e6 }), rules);
+  assert.equal(seoul.binding, "blocked");
+  assert.ok(seoul.blocks.some((m) => m.includes("금지")));
+  const busan = calcLoanLimit(input({ region: "부산", use: "다가구주택", price: 10e8, borrower: "business", monthlyRent: 5e6, rentDeposit: 0 }), rules);
+  assert.equal(busan.ltv.ratio, 0.60);
+  assert.equal(busan.rti.threshold, 1.25);
+});
+
+test("경매 상가(개인): min(담보가치 × LTV 70%, 낙찰가 × 80%), 담보가치 = min(감정가, 낙찰가)", () => {
+  const r = calcLoanLimit(input({ region: "제주", use: "상가", price: 10e8, deal: "auction", bid: 7e8, depositTier: "other", shopUnits: 1, annualIncome: 0 }), rules);
+  assert.equal(r.auction.value, 7e8);
+  near(r.auction.byLtv, 4.9e8);
+  assert.equal(r.auction.byBid, 5.6e8);
+  near(r.collateralLimit, 4.8e8); // 4.9억 − 상가 1호 1,000만
+  assert.equal(r.binding, "ltv");
+});
+
+test("경매 규제지역 아파트(개인 무주택): 낙찰가 기준 LTV 40%와 가격 구간 상한", () => {
+  const r = calcLoanLimit(input({ price: 15e8, deal: "auction", bid: 14e8 }), rules);
+  assert.equal(r.auction.byLtv, 5.6e8);
+  assert.equal(r.cap.cap, 6e8); // 담보가치 14억 → 15억 이하 구간
+  assert.equal(r.finalLimit, 5.6e8);
+});
+
+test("경매: 낙찰가를 비우면 감정가 × 낙찰가율로 예상하고 경고", () => {
+  const r = calcLoanLimit(biz({ deal: "auction", bid: 0 }), rules);
+  assert.equal(r.auction.bid, 7e8);
+  assert.ok(r.auction.bidEstimated);
+  assert.ok(r.warnings.some((m) => m.includes("예상")));
+});
+
+test("경매: 낙찰가 인정 비율이 LTV보다 낮으면 낙찰가 기준이 결정, 비은행은 90%", () => {
+  const bank = calcLoanLimit(biz({ deal: "auction", bid: 7e8, ltvOverride: 0.9, monthlyRent: 2e7 }), rules);
+  assert.equal(bank.auction.bidRatio, 0.8);
+  assert.equal(bank.binding, "bid");
+  assert.equal(bank.collateralLimit, 5.5e8); // 7억 × 80% − 1,000만
+  const nonBank = calcLoanLimit(biz({ deal: "auction", bid: 7e8, ltvOverride: 0.9, monthlyRent: 2e7, sector: "nonBank" }), rules);
+  assert.equal(nonBank.auction.bidRatio, 0.9);
+  assert.equal(nonBank.collateralLimit, 6.2e8);
+});

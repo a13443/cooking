@@ -196,7 +196,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
     <div class="eyebrow">부동산 담보 · 1단계 계산기</div>
     <h1>내 부동산으로 받을 수 있는 예상 대출금액</h1>
     <p class="lede">법원경매 매각가율(5년치)과 LTV 중 낮은 비율로 담보 기준 한도를 구하고, 수도권·규제지역 금액 상한과 소득 대비 DSR 한도까지 비교해 가장 작은 값을 보여줍니다.</p>
-    <div class="formula">대출가능금액 = min( 시가 × min(낙찰가율, LTV) − 소액임차보증금,  가격 구간·목적 상한,  DSR 한도 )</div>
+    <div class="formula" id="formula">대출가능금액 = min( 시가 × min(낙찰가율, LTV) − 소액임차보증금,  가격 구간·목적 상한,  DSR 한도 )</div>
   </header>
 
   <div class="main">
@@ -208,7 +208,29 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           <button type="button" class="preset" id="preset-jeju">제주 임야 3억</button>
           <button type="button" class="preset" id="preset-seoul">서울 근린상가 10억</button>
           <button type="button" class="preset" id="preset-apt">서울 아파트 18억 구입</button>
+          <button type="button" class="preset" id="preset-auction">제주 상가 경매 · 임대사업자</button>
         </div>
+      </div>
+
+      <div class="group">
+        <h2>대출 유형</h2>
+        <div class="row">
+          <div class="field">
+            <label for="borrower">차주</label>
+            <select id="borrower">
+              <option value="personal">개인 (가계대출)</option>
+              <option value="business">임대사업자 (사업자대출)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="deal">매입 방식</label>
+            <select id="deal">
+              <option value="market">매매·보유 담보</option>
+              <option value="auction">경매 낙찰 (경락잔금대출)</option>
+            </select>
+          </div>
+        </div>
+        <span class="hint" id="type-hint"></span>
       </div>
 
       <div class="group">
@@ -253,15 +275,27 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           </div>
         </div>
         <div class="field">
-          <label for="price">추정 시세 (원)</label>
+          <label for="price" id="price-label">추정 시세 (원)</label>
           <input id="price" class="money" type="text" inputmode="numeric" autocomplete="off">
           <span class="hint" id="price-kor"></span>
           <span class="hint" id="price-hint">공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다.</span>
         </div>
+        <div class="row" id="bid-fields" hidden>
+          <div class="field">
+            <label for="bid">낙찰가 (원)</label>
+            <input id="bid" class="money" type="text" inputmode="numeric" autocomplete="off" placeholder="비우면 감정가 × 낙찰가율로 예상">
+            <span class="hint" id="bid-kor"></span>
+          </div>
+          <div class="field">
+            <label for="bid-ratio">낙찰가 인정 비율 (%)</label>
+            <input id="bid-ratio" type="number" min="0" max="100" step="1">
+            <span class="hint" id="bid-ratio-hint"></span>
+          </div>
+        </div>
         <div class="field">
-          <label for="senior">선순위 채권 (원)</label>
+          <label for="senior" id="senior-label">선순위 채권 (원)</label>
           <input id="senior" class="money" type="text" inputmode="numeric" autocomplete="off">
-          <span class="hint">등기부등본 을구에 이미 잡힌 근저당의 채권최고액 합계입니다. 기존 대출을 갚고 새로 받는 대환이면 비워 두세요. 기존 대출의 상환액은 아래 DSR의 '기존 대출 연간 원리금'에 넣습니다.</span>
+          <span class="hint" id="senior-hint">등기부등본 을구에 이미 잡힌 근저당의 채권최고액 합계입니다. 기존 대출을 갚고 새로 받는 대환이면 비워 두세요. 기존 대출의 상환액은 아래 DSR의 '기존 대출 연간 원리금'에 넣습니다.</span>
         </div>
       </div>
 
@@ -334,8 +368,8 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
       </div>
 
       <div class="group">
-        <h2>상환 능력 (DSR)</h2>
-        <div class="row">
+        <h2 id="repay-title">상환 능력 (DSR)</h2>
+        <div class="row" id="dsr-income">
           <div class="field">
             <label for="income">연소득 (원)</label>
             <input id="income" class="money" type="text" inputmode="numeric" autocomplete="off">
@@ -344,6 +378,33 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
             <label for="existing">기존 대출 연간 원리금 (원)</label>
             <input id="existing" class="money" type="text" inputmode="numeric" autocomplete="off">
           </div>
+        </div>
+        <div id="rti-fields" hidden>
+          <div class="row">
+            <div class="field">
+              <label for="rent">월세 합계 (원)</label>
+              <input id="rent" class="money" type="text" inputmode="numeric" autocomplete="off">
+              <span class="hint" id="rent-kor"></span>
+            </div>
+            <div class="field">
+              <label for="rent-deposit">보증금 합계 (원)</label>
+              <input id="rent-deposit" class="money" type="text" inputmode="numeric" autocomplete="off">
+              <span class="hint" id="rent-deposit-kor"></span>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="deposit-yield">보증금 간주이자율 (%)</label>
+              <input id="deposit-yield" type="number" min="0" max="20" step="0.1">
+              <span class="hint">보증금은 평균 예금금리를 곱해 임대소득에 더합니다. 금융기관마다 다릅니다.</span>
+            </div>
+            <div class="field">
+              <label for="building-interest">이 건물 기존 대출 연 이자 (원)</label>
+              <input id="building-interest" class="money" type="text" inputmode="numeric" autocomplete="off">
+              <span class="hint">갚지 않고 남는 대출만 넣습니다. 경매나 대환이면 비워 두세요.</span>
+            </div>
+          </div>
+          <span class="hint" id="rti-hint"></span>
         </div>
         <div class="row">
           <div class="field">
@@ -376,6 +437,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           </select>
           <span class="hint" id="repayment-hint"></span>
         </div>
+        <div id="dsr-extra">
         <label class="check" for="dsr-exempt"><input type="checkbox" id="dsr-exempt"> 가계대출 총액(기존 잔액 + 이번 대출)이 1억원 이하</label>
         <div class="field" id="balance-field" hidden>
           <label for="loan-balance">기존 가계대출 잔액 (원)</label>
@@ -415,6 +477,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
             <input id="jeonse-interest" class="money" type="text" inputmode="numeric" autocomplete="off">
           </div>
         </div>
+        </div>
       </div>
 
       <div class="group">
@@ -446,27 +509,22 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         <span class="meta" id="sheet-meta"></span>
       </div>
       <table class="ledger">
-        <tbody>
-          <tr><td class="op"></td><td>주택 시가<span class="sub" id="l-price-sub"></span></td><td class="amt" id="l-price"></td></tr>
-          <tr><td class="op">×</td><td>적용 비율 = min(낙찰가율, LTV)<span class="sub" id="l-rate-sub"></span></td><td class="amt" id="l-rate"></td></tr>
-          <tr><td class="op">−</td><td>소액임차보증금<span class="sub" id="l-ded-sub"></span></td><td class="amt" id="l-ded"></td></tr>
-          <tr><td class="op">−</td><td>선순위 채권<span class="sub">기존 근저당 채권최고액</span></td><td class="amt" id="l-senior"></td></tr>
-        </tbody>
+        <tbody id="ledger"></tbody>
       </table>
       <p class="alert" id="cap-alert" hidden></p>
       <div class="limits">
         <div class="limit" id="lim-collateral"><span class="k">담보 기준 한도</span><span class="v" id="lim-collateral-v"></span><span class="d" id="lim-collateral-d"></span></div>
         <div class="limit" id="lim-cap"><span class="k">가격 구간·목적 상한</span><span class="v" id="lim-cap-v"></span><span class="d" id="lim-cap-d"></span></div>
-        <div class="limit" id="lim-dsr"><span class="k">DSR 한도</span><span class="v" id="lim-dsr-v"></span><span class="d" id="lim-dsr-d"></span></div>
+        <div class="limit" id="lim-dsr"><span class="k" id="lim-dsr-k">DSR 한도</span><span class="v" id="lim-dsr-v"></span><span class="d" id="lim-dsr-d"></span></div>
       </div>
       <div class="final">
-        <span class="total-label">예상 대출가능금액<span class="sub">위 세 가지 한도(담보 기준 한도, 가격 구간·목적 상한, DSR 한도) 중 가장 작은 금액</span></span>
+        <span class="total-label">예상 대출가능금액<span class="sub" id="total-sub"></span></span>
         <span><span class="total-amt" id="l-total"></span><span class="won" id="l-total-kor"></span></span>
       </div>
       <p class="hint" id="monthly"></p>
       <ul class="msgs" id="msgs"></ul>
       <div class="tips" id="tips" hidden>
-        <h3>한도를 늘리려면 <span class="hint">DSR이 한도를 정했습니다. 조건을 하나씩만 바꿨을 때의 한도입니다.</span></h3>
+        <h3>한도를 늘리려면 <span class="hint"><span id="tips-why">DSR</span>이 한도를 정했습니다. 조건을 하나씩만 바꿨을 때의 한도입니다.</span></h3>
         <ul id="tips-list"></ul>
       </div>
       <p class="note">감정평가 결과는 반영하지 않았습니다.</p>
@@ -565,6 +623,7 @@ function setRegionDefaults() {
   $("tier-hint").classList.toggle("warn", !!hint);
 }
 
+let REPAYMENT_HINT_DSR = "";
 function render() {
   const region = $("region").value, use = $("use").value;
   const cell = autoRate();
@@ -572,6 +631,8 @@ function render() {
   const override = $("override").checked;
   const rate = override ? Number($("rate-manual").value) || 0 : cell.applied;
   const tier = TIERS.find((t) => t.id === $("tier").value);
+  const business = $("borrower").value === "business";
+  const auctionDeal = $("deal").value === "auction";
   const hu = Math.max(0, Math.floor(Number($("house-units").value) || 0));
   const su = Math.max(0, Math.floor(Number($("shop-units").value) || 0));
 
@@ -601,9 +662,31 @@ function render() {
   $("district-field").hidden = !isHousing || !Array.isArray(regulatedList);
   ["location-field", "purpose-field", "first-time-label", "policy-row"].forEach((id) => { $(id).hidden = !isHousing; });
   $("homes-field").hidden = !isHousing && !$("jeonse").checked;
+  // 임대사업자는 주택 수·목적·정책모기지·DSR 대신 임대 수입(RTI)을 본다
+  if (business) ["homes-field", "purpose-field", "first-time-label", "policy-row"].forEach((id) => { $(id).hidden = true; });
+  $("dsr-income").hidden = $("dsr-extra").hidden = business;
+  $("rti-fields").hidden = !business;
+  $("repay-title").textContent = business ? "임대 수입과 대출 조건 (RTI)" : "상환 능력 (DSR)";
+  $("bid-fields").hidden = !auctionDeal;
+  $("price-label").textContent = auctionDeal ? "감정가 (원)" : "추정 시세 (원)";
+  $("senior-label").textContent = auctionDeal ? "인수할 금액 (원)" : "선순위 채권 (원)";
+  $("senior-hint").textContent = auctionDeal
+    ? "경매로 근저당 등은 대부분 소멸합니다. 낙찰자가 떠안는 대항력 있는 임차인 보증금 등 인수할 금액만 넣습니다."
+    : "등기부등본 을구에 이미 잡힌 근저당의 채권최고액 합계입니다. 기존 대출을 갚고 새로 받는 대환이면 비워 두세요. 기존 대출의 상환액은 아래 DSR의 '기존 대출 연간 원리금'에 넣습니다.";
+  const defaultBidRatio = RULES.auctionLoan.bidRatio[$("sector").value] * 100;
+  $("bid-ratio").placeholder = defaultBidRatio;
+  $("bid-ratio-hint").textContent = `비우면 ${$("sector").value === "bank" ? "은행" : "비은행"} 관행 ${defaultBidRatio}%를 씁니다.`;
+  $("deposit-yield").placeholder = RULES.business.depositYield * 100;
+  $("type-hint").textContent = [
+    business ? "사업자대출은 DSR 대신 RTI(임대소득 ÷ 이자)로 상환능력을 보고, 주택 가격 구간 상한은 없습니다." : "",
+    auctionDeal ? "경락잔금대출은 담보가치(감정가와 낙찰가 중 낮은 값) × LTV와 낙찰가 × 인정 비율 중 낮은 금액을 기준으로 합니다." : "",
+  ].filter(Boolean).join(" ");
   $("homes-hint").hidden = isHousing;
   $("permit-field").hidden = isHousing;
-  $("repayment-field").hidden = isHousing;
+  $("repayment-field").hidden = isHousing && !business;
+  $("repayment-hint").textContent = business
+    ? "RTI는 이자만으로 계산하므로 상환 방식은 한도에 영향을 주지 않고, 아래 월 상환액 안내에만 씁니다."
+    : REPAYMENT_HINT_DSR;
   $("balance-field").hidden = !$("dsr-exempt").checked;
   const homes = $("homes").value;
   $("first-time").disabled = homes !== "noHome";
@@ -624,34 +707,62 @@ function render() {
       policy: $("jeonse-policy").checked, annualInterest: parseMoney($("jeonse-interest").value) },
     depositTier: tier.id, houseUnits: hu, shopUnits: su,
     permitZone: !isHousing && $("permit-zone").checked,
-    repayment: isHousing ? "amortizing" : $("repayment").value,
+    repayment: "amortizing",
     dsrExempt: $("dsr-exempt").checked, existingLoanBalance: parseMoney($("loan-balance").value),
+    borrower: business ? "business" : "personal", deal: auctionDeal ? "auction" : "market",
+    bid: parseMoney($("bid").value), bidRatio: $("bid-ratio").value === "" ? undefined : Number($("bid-ratio").value) / 100,
+    monthlyRent: parseMoney($("rent").value), rentDeposit: parseMoney($("rent-deposit").value),
+    depositYield: $("deposit-yield").value === "" ? undefined : Number($("deposit-yield").value) / 100,
+    existingBuildingInterest: parseMoney($("building-interest").value),
   };
+  if (!isHousing || business) loanInput.repayment = $("repayment").value;
   const r = LoanLimit.calcLoanLimit(loanInput, RULES);
 
   $("location-chip").textContent = r.locationName;
   $("location-chip").classList.toggle("warn", r.location === "regulated");
   $("ltv-auto").textContent = Math.round(r.ltv.policyRatio * 100) + "%";
-  $("ltv-detail").textContent = isHousing ? `${r.ltv.why} 기준`
+  $("ltv-detail").textContent = business ? `${r.ltv.why} 기준`
+    : isHousing ? `${r.ltv.why} 기준`
     : "토지·상가·오피스텔 등 비주택담보대출 LTV입니다. 주택 수·대출 목적과 관계없이 같고, 주택 규제(가격 구간 상한 등)는 적용되지 않습니다. DSR과 스트레스 금리(기타대출 기준)는 적용됩니다.";
 
   $("price-kor").textContent = korMoney(price);
   $("house-amt").textContent = `1호당 ${korMoney(tier.house)}`;
   $("shop-amt").textContent = `1호당 ${korMoney(tier.shop)}`;
-  $("sheet-meta").textContent = isHousing ? `${region} · ${use} · ${r.locationName}` : `${region} · ${use} · 비주택`;
-  $("l-price").textContent = fmt(price);
-  $("l-price-sub").textContent = korMoney(price);
-  $("l-rate").textContent = (r.ratio * 100).toFixed(1) + "%";
-  $("l-rate-sub").textContent = `낙찰가율 ${rate.toFixed(1)}%${override ? " (직접 입력)" : ""} · LTV ${Math.round(r.ltv.ratio * 100)}%${r.ltv.overridden ? " (직접 입력)" : ""} → ${r.binding === "auction" || rate / 100 < r.ltv.ratio ? "낙찰가율" : "LTV"} 적용`;
+  $("sheet-meta").textContent = [region, use, isHousing ? r.locationName : "비주택", business ? "임대사업자" : "", auctionDeal ? "경락잔금" : ""].filter(Boolean).join(" · ");
+  $("bid-kor").textContent = korMoney(loanInput.bid);
+  $("rent-kor").textContent = korMoney(loanInput.monthlyRent);
+  $("rent-deposit-kor").textContent = korMoney(loanInput.rentDeposit);
+  $("rti-hint").textContent = r.rti ? `연 임대소득 ${korMoney(r.rti.income)} (월세 × 12 + 보증금 × ${(r.rti.depositYield * 100).toFixed(1)}%) · ${r.housing ? "주택" : "비주택"} RTI 기준 ${r.rti.threshold}배 이상` : "";
+
+  // 담보가치 산정표
   const parts = [];
   if (hu) parts.push(`주택 ${hu}호 × ${korMoney(tier.house)}`);
   if (su) parts.push(`상가 ${su}호 × ${korMoney(tier.shop)}`);
-  $("l-ded-sub").textContent = (parts.join(" + ") || "임차 호실 없음") + ` · ${tier.name}`;
-  $("l-ded").textContent = r.deposit.deduction ? fmt(r.deposit.deduction) : "0";
-  $("l-senior").textContent = fmt(r.seniorDebt);
+  const row = (op, label, sub, amt) => `<tr><td class="op">${op}</td><td>${label}<span class="sub">${sub}</span></td><td class="amt">${amt}</td></tr>`;
+  const ltvText = `LTV ${Math.round(r.ltv.ratio * 100)}%${r.ltv.overridden ? " (직접 입력)" : ""}`;
+  const dedRow = row("−", "소액임차보증금", (parts.join(" + ") || "임차 호실 없음") + ` · ${tier.name}`, r.deposit.deduction ? fmt(r.deposit.deduction) : "0");
+  const A = r.auction;
+  $("ledger").innerHTML = A ? [
+    row("", "감정가", korMoney(A.appraisal), fmt(A.appraisal)),
+    row("", "낙찰가", A.bidEstimated ? `예상: 감정가 × 낙찰가율 ${rate.toFixed(1)}%` : `감정가 대비 ${A.appraisal ? (A.bid / A.appraisal * 100).toFixed(1) : 0}%`, fmt(A.bid)),
+    row("", "담보가치 = min(감정가, 낙찰가)", korMoney(A.value), fmt(A.value)),
+    row("", "min(담보가치 × LTV, 낙찰가 × 인정 비율)",
+      `담보가치 × ${ltvText} = ${korMoney(A.byLtv)} · 낙찰가 × ${Math.round(A.bidRatio * 100)}% = ${korMoney(A.byBid)} → ${A.byBid < A.byLtv ? "낙찰가 기준" : "LTV 기준"} 적용`,
+      fmt(Math.min(A.byLtv, A.byBid))),
+    dedRow,
+    row("−", "인수할 금액", "대항력 있는 임차인 보증금 등", fmt(r.seniorDebt)),
+  ].join("") : [
+    row("", "시가", korMoney(price), fmt(price)),
+    row("×", "적용 비율 = min(낙찰가율, LTV)", `낙찰가율 ${rate.toFixed(1)}%${override ? " (직접 입력)" : ""} · ${ltvText} → ${r.binding === "auction" || rate / 100 < r.ltv.ratio ? "낙찰가율" : "LTV"} 적용`, (r.ratio * 100).toFixed(1) + "%"),
+    dedRow,
+    row("−", "선순위 채권", "기존 근저당 채권최고액", fmt(r.seniorDebt)),
+  ].join("");
+  $("formula").textContent = A
+    ? `대출가능금액 = min( min(담보가치 × LTV, 낙찰가 × ${Math.round(A.bidRatio * 100)}%) − 소액임차보증금 − 인수 금액,  ${business ? "RTI 한도" : "가격 구간·목적 상한,  DSR 한도"} )`
+    : `대출가능금액 = min( 시가 × min(낙찰가율, LTV) − 소액임차보증금,  ${business ? "RTI 한도" : "가격 구간·목적 상한,  DSR 한도"} )`;
   const alert = $("cap-alert");
   alert.hidden = r.deposit.raw <= r.deposit.cap || r.deposit.raw === 0;
-  alert.textContent = `호수 기준 차감액 ${korMoney(r.deposit.raw)}이 예상 낙찰가의 절반(${korMoney(r.deposit.cap)})을 넘어 상한까지만 뺐습니다.`;
+  alert.textContent = `호수 기준 차감액 ${korMoney(r.deposit.raw)}이 ${A ? "" : "예상 "}낙찰가의 절반(${korMoney(r.deposit.cap)})을 넘어 상한까지만 뺐습니다.`;
 
   const setLimit = (id, amount, desc, bind) => {
     $(id).classList.toggle("bind", bind);
@@ -659,9 +770,14 @@ function render() {
     $(id + "-v").textContent = amount == null ? "해당 없음" : fmt(amount);
     $(id + "-d").textContent = desc;
   };
-  setLimit("lim-collateral", r.collateralLimit, `시가 × ${(r.ratio * 100).toFixed(1)}% − 소액임차보증금${r.seniorDebt ? " − 선순위 채권" : ""}`, r.binding === "ltv" || r.binding === "auction");
-  setLimit("lim-cap", r.cap ? r.cap.cap : null, r.cap ? r.cap.why : "수도권·규제지역 주택담보대출에만 적용", r.binding === "cap");
-  setLimit("lim-dsr", r.dsr.excluded ? null : Math.max(0, r.dsr.limit), r.dsr.why, r.binding === "dsr");
+  setLimit("lim-collateral", r.collateralLimit, A
+    ? `min(담보가치 × ${Math.round(r.ltv.ratio * 100)}%, 낙찰가 × ${Math.round(A.bidRatio * 100)}%) − 소액임차보증금${r.seniorDebt ? " − 인수할 금액" : ""}`
+    : `시가 × ${(r.ratio * 100).toFixed(1)}% − 소액임차보증금${r.seniorDebt ? " − 선순위 채권" : ""}`, ["ltv", "auction", "bid"].includes(r.binding));
+  setLimit("lim-cap", r.cap ? r.cap.cap : null, r.cap ? r.cap.why : business ? "사업자대출에는 주택 가격 구간 상한이 없습니다" : "수도권·규제지역 주택담보대출에만 적용", r.binding === "cap");
+  const repay = business ? r.rti : r.dsr;
+  $("lim-dsr-k").textContent = business ? "RTI 한도" : "DSR 한도";
+  setLimit("lim-dsr", repay.excluded ? null : Math.max(0, repay.limit), repay.why, r.binding === (business ? "rti" : "dsr"));
+  $("total-sub").textContent = `위 세 가지 한도(담보 기준 한도, 가격 구간·목적 상한, ${business ? "RTI" : "DSR"} 한도) 중 가장 작은 금액`;
 
   $("l-total").textContent = fmt(r.finalLimit);
   $("l-total-kor").textContent = r.binding === "blocked" ? "대출 불가" : korMoney(r.finalLimit);
@@ -677,6 +793,7 @@ function render() {
 
   // 역산: DSR이 한도를 정했을 때 조건별로 바뀌는 한도
   const TIP_TEXT = {
+    rent: (t) => [`월세 ${korMoney(t.value)} 이상`, "보증금은 그대로 두고, 담보 기준 한도까지 받으려면 필요한 월세입니다."],
     income: (t) => [`연소득 ${korMoney(t.value)} 이상`, "담보·상한 기준 한도까지 받으려면 필요한 소득입니다."],
     years: (t) => [`만기 ${t.value}년`, "만기를 늘리면 연 상환액이 줄어듭니다. 은행에 따라 최장 만기가 다릅니다."],
     fixed: () => ["고정금리 선택", "스트레스 금리가 붙지 않습니다. 실제 고정금리는 보통 변동금리보다 높으니 금리도 함께 확인하세요."],
@@ -684,6 +801,7 @@ function render() {
     nonBank: () => ["비은행(2금융권)", "DSR 50% 기준입니다. 금리가 더 높을 수 있습니다."],
   };
   const tips = LoanLimit.suggestions(loanInput, RULES);
+  $("tips-why").textContent = business ? "RTI" : "DSR";
   $("tips").hidden = !tips.length;
   $("tips-list").innerHTML = tips.map((t) => {
     const [label, desc] = TIP_TEXT[t.key](t);
@@ -727,9 +845,11 @@ function renderTradeBox() {
   const T = window.TRADES;
   const list = T ? Object.entries(T.regions).filter(([, r]) => r.sido === $("region").value) : [];
   $("trade-box").hidden = !(list.length && $("use").value === "아파트");
-  $("price-hint").textContent = $("trade-box").hidden
-    ? "공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다."
-    : "위 실거래가 버튼으로 채우거나 직접 입력합니다.";
+  $("price-hint").textContent = $("deal").value === "auction"
+    ? "법원 감정가를 입력합니다. 낙찰가를 비우면 아래 낙찰가율 통계로 예상 낙찰가를 잡습니다."
+    : $("trade-box").hidden
+      ? "공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다."
+      : "위 실거래가 버튼으로 채우거나 직접 입력합니다.";
   if ($("trade-box").hidden) return;
   $("trade-meta").textContent = `${T.period} · ${T.updated} 갱신`;
   const sgg = $("trade-sgg");
@@ -867,7 +987,8 @@ function restoreState() {
   for (const el of stateFields()) {
     if (el.id === "region" || el.id === "use") continue;
     if (el.type === "checkbox") el.checked = q.get(el.id) === "1";
-    else el.value = q.get(el.id) ?? "";
+    else if (q.has(el.id)) el.value = q.get(el.id);
+    else if (el.tagName !== "SELECT") el.value = ""; // 링크에 없는 선택 칸(나중에 추가된 칸)은 기본값 유지
   }
   $("override-field").hidden = !$("override").checked;
   $("ltv-field").hidden = !$("ltv-override").checked;
@@ -904,6 +1025,12 @@ function applyPreset(p) {
   $("jeonse").checked = false; $("jeonse-fields").hidden = true;
   $("permit-zone").checked = false; $("repayment").value = "amortizing";
   $("dsr-exempt").checked = false; $("loan-balance").value = "";
+  $("borrower").value = p.borrower || "personal";
+  $("deal").value = p.deal || "market";
+  $("bid").value = p.bid ? fmt(p.bid) : ""; $("bid-ratio").value = "";
+  $("rent").value = p.rent ? fmt(p.rent) : ""; $("rent-deposit").value = p.rentDeposit ? fmt(p.rentDeposit) : "";
+  $("deposit-yield").value = ""; $("building-interest").value = "";
+  if (p.repayment) $("repayment").value = p.repayment;
   render();
 }
 
@@ -913,7 +1040,7 @@ function init() {
   fill($("tier"), TIERS.map((t) => [t.id, t.name]));
   $("permit-hint").textContent = "체크하면 비주택 LTV가 70%에서 40%로 줄어듭니다. 10·15 대책으로 새로 지정된 서울 전역·경기 12곳은 아파트만 대상이라 해당하지 않습니다. 예: " +
     RULES.nonHousingPermitZoneExamples.join(" / ");
-  $("repayment-hint").textContent = `만기일시상환은 DSR을 '원금 ÷ ${RULES.bulletDsrAssumedYears}년 + 연 이자'로 계산합니다(현행 기준). 이때 입력한 만기는 DSR에 영향을 주지 않습니다.`;
+  REPAYMENT_HINT_DSR = `만기일시상환은 DSR을 '원금 ÷ ${RULES.bulletDsrAssumedYears}년 + 연 이자'로 계산합니다(현행 기준). 이때 입력한 만기는 DSR에 영향을 주지 않습니다.`;
   $("dsr-exempt-hint").textContent = `차주단위 DSR은 가계대출 총액이 ${RULES.dsrTotalLoanThreshold / 1e8}억원을 넘을 때 적용됩니다. 1억에서 기존 잔액을 뺀 금액까지는 DSR 없이 빌릴 수 있습니다.`;
   $("disclaimer").textContent = `본 결과는 참고용이며 실제 한도는 금융기관 심사 및 최신 금융위원회 규정에 따라 달라질 수 있습니다. (규정 기준일: ${RULES.effectiveDate})`;
   $("src-period").textContent = RATES.periods["5y"];
@@ -930,8 +1057,9 @@ function init() {
   ["house-units", "shop-units", "rate-manual", "ltv-manual"].forEach((id) => $(id).addEventListener("input", render));
   ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-product", "household", "jeonse-capital", "jeonse-policy"]
     .forEach((id) => $(id).addEventListener("change", render));
-  ["loan-rate", "years"].forEach((id) => $(id).addEventListener("input", render));
-  ["senior", "income", "existing", "credit", "jeonse-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
+  ["loan-rate", "years", "bid-ratio", "deposit-yield"].forEach((id) => $(id).addEventListener("input", render));
+  ["borrower", "deal"].forEach((id) => $(id).addEventListener("change", render));
+  ["senior", "income", "existing", "credit", "jeonse-interest", "bid", "rent", "rent-deposit", "building-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
     const n = parseMoney(e.target.value);
     e.target.value = n ? fmt(n) : "";
     render();
@@ -970,6 +1098,8 @@ function init() {
   $("preset-formula").addEventListener("click", () => applyPreset({ region: "강원", use: "단독주택", price: 1e8, rate: 70, tier: "other", house: 1, shop: 0 }));
   $("preset-jeju").addEventListener("click", () => applyPreset({ region: "제주", use: "임야", price: 3e8 }));
   $("preset-apt").addEventListener("click", () => applyPreset({ region: "서울", use: "아파트", price: 18e8, income: 2e8 }));
+  $("preset-auction").addEventListener("click", () => applyPreset({ region: "제주", use: "상가", price: 8e8, bid: 5.6e8, borrower: "business",
+    deal: "auction", rent: 3.5e6, rentDeposit: 5e7, loanRate: 5, years: 10, repayment: "bullet", shop: 1 }));
   $("preset-seoul").addEventListener("click", () => applyPreset({ region: "서울", use: "근린시설", price: 1e9, house: 0, shop: 3 }));
 
   $("copy-link").addEventListener("click", () => {

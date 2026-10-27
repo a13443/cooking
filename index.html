@@ -399,6 +399,13 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
               <span class="hint">보증금은 평균 예금금리를 곱해 임대소득에 더합니다. 금융기관마다 다릅니다.</span>
             </div>
             <div class="field">
+              <label for="rti-stress">RTI 스트레스 금리 (%p)</label>
+              <input id="rti-stress" type="number" min="0" max="10" step="0.1">
+              <span class="hint" id="rti-stress-hint"></span>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
               <label for="building-interest">이 건물 기존 대출 연 이자 (원)</label>
               <input id="building-interest" class="money" type="text" inputmode="numeric" autocomplete="off">
               <span class="hint">갚지 않고 남는 대출만 넣습니다. 경매나 대환이면 비워 두세요.</span>
@@ -677,6 +684,10 @@ function render() {
   $("bid-ratio").placeholder = defaultBidRatio;
   $("bid-ratio-hint").textContent = `비우면 ${$("sector").value === "bank" ? "은행" : "비은행"} 관행 ${defaultBidRatio}%를 씁니다.`;
   $("deposit-yield").placeholder = RULES.business.depositYield * 100;
+  $("rti-stress").placeholder = RULES.business.rtiStressMin * 100;
+  $("rti-stress-hint").textContent = $("rate-type").value === "fixed"
+    ? "고정금리라 붙지 않습니다."
+    : `최근 3년 중소기업대출 금리 최고치 − 현재 금리이고, ${RULES.business.rtiStressMin * 100}%p보다 작으면 ${RULES.business.rtiStressMin * 100}%p입니다. 은행이 알려준 값이 있으면 넣으세요.`;
   $("type-hint").textContent = [
     business ? "사업자대출은 DSR 대신 RTI(임대소득 ÷ 이자)로 상환능력을 보고, 주택 가격 구간 상한은 없습니다." : "",
     auctionDeal ? "경락잔금대출은 담보가치(감정가와 낙찰가 중 낮은 값) × LTV와 낙찰가 × 인정 비율 중 낮은 금액을 기준으로 합니다." : "",
@@ -714,6 +725,7 @@ function render() {
     monthlyRent: parseMoney($("rent").value), rentDeposit: parseMoney($("rent-deposit").value),
     depositYield: $("deposit-yield").value === "" ? undefined : Number($("deposit-yield").value) / 100,
     existingBuildingInterest: parseMoney($("building-interest").value),
+    rtiStress: $("rti-stress").value === "" ? undefined : Number($("rti-stress").value) / 100,
   };
   if (!isHousing || business) loanInput.repayment = $("repayment").value;
   const r = LoanLimit.calcLoanLimit(loanInput, RULES);
@@ -1029,7 +1041,7 @@ function applyPreset(p) {
   $("deal").value = p.deal || "market";
   $("bid").value = p.bid ? fmt(p.bid) : ""; $("bid-ratio").value = "";
   $("rent").value = p.rent ? fmt(p.rent) : ""; $("rent-deposit").value = p.rentDeposit ? fmt(p.rentDeposit) : "";
-  $("deposit-yield").value = ""; $("building-interest").value = "";
+  $("deposit-yield").value = ""; $("building-interest").value = ""; $("rti-stress").value = "";
   if (p.repayment) $("repayment").value = p.repayment;
   render();
 }
@@ -1057,7 +1069,7 @@ function init() {
   ["house-units", "shop-units", "rate-manual", "ltv-manual"].forEach((id) => $(id).addEventListener("input", render));
   ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-product", "household", "jeonse-capital", "jeonse-policy"]
     .forEach((id) => $(id).addEventListener("change", render));
-  ["loan-rate", "years", "bid-ratio", "deposit-yield"].forEach((id) => $(id).addEventListener("input", render));
+  ["loan-rate", "years", "bid-ratio", "deposit-yield", "rti-stress"].forEach((id) => $(id).addEventListener("input", render));
   ["borrower", "deal"].forEach((id) => $(id).addEventListener("change", render));
   ["senior", "income", "existing", "credit", "jeonse-interest", "bid", "rent", "rent-deposit", "building-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
     const n = parseMoney(e.target.value);

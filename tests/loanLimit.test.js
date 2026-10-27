@@ -422,3 +422,19 @@ test("경매: 낙찰가 인정 비율이 LTV보다 낮으면 낙찰가 기준이
   assert.equal(nonBank.auction.bidRatio, 0.9);
   assert.equal(nonBank.collateralLimit, 6.2e8);
 });
+
+test("RTI 스트레스 금리: 입력값이 최소 1%p보다 크면 입력값, 작으면 1%p", () => {
+  near(calcLoanLimit(biz({ rtiStress: 0.015 }), rules).rti.limit, 49.25e6 / 1.5 / 0.065);
+  assert.equal(calcLoanLimit(biz({ rtiStress: 0.005 }), rules).rti.stress, 0.01);
+});
+
+test("임대사업자: 개인 전용 입력(신용대출·전세대출)은 경고·DSR에 쓰지 않음", () => {
+  const r = calcLoanLimit(input({ region: "부산", use: "다가구주택", price: 10e8, borrower: "business", monthlyRent: 5e6, homes: "oneHome",
+    creditLoanTotal: 2e8, jeonse: { has: true, inCapitalOrRegulated: true, policy: false, annualInterest: 1e7 } }), rules);
+  assert.ok(!r.warnings.some((m) => m.includes("신용대출") || m.includes("전세대출")));
+});
+
+test("주택 임대사업자 수도권 금지 안내에 8·13 신축 비아파트 예외 포함", () => {
+  const r = calcLoanLimit(input({ use: "연립·다세대", borrower: "business", monthlyRent: 3e6 }), rules);
+  assert.ok(r.blocks.some((m) => m.includes("신축 비아파트")));
+});

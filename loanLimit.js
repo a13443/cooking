@@ -55,7 +55,7 @@
     const threshold = housing ? B.rti.housing : B.rti.nonHousing;
     const depositYield = input.depositYield ?? B.depositYield;
     const income = (input.monthlyRent || 0) * 12 + (input.rentDeposit || 0) * depositYield;
-    const stress = input.rateType === "fixed" ? 0 : B.rtiStressMin;
+    const stress = input.rateType === "fixed" ? 0 : Math.max(B.rtiStressMin, input.rtiStress ?? 0);
     const existing = input.existingBuildingInterest || 0;
     const base = { threshold, income, stress, existing, depositYield };
     if (!input.monthlyRent && !input.rentDeposit) return { ...base, limit: null, excluded: true, why: "월세·보증금을 입력하면 RTI 한도를 계산합니다" };
@@ -148,7 +148,8 @@
    *   depositTier, houseUnits, shopUnits, seniorDebt(선순위 채권최고액, 경매면 인수할 금액),
    *   borrower('personal'|'business'), deal('market'|'auction'),
    *   경매: price=감정가, bid(낙찰가, 0이면 감정가 × 낙찰가율로 예상), bidRatio(낙찰가 인정 비율, 없으면 금융권별 기본값),
-   *   임대사업자: monthlyRent, rentDeposit, depositYield, existingBuildingInterest(해당 건물 기존 대출 연 이자) }
+   *   임대사업자: monthlyRent, rentDeposit, depositYield, existingBuildingInterest(해당 건물 기존 대출 연 이자),
+   *     rtiStress(변동금리 스트레스, 최소값보다 작으면 최소값) }
    */
   function calcLoanLimit(input, rules) {
     const location = classifyLocation(input.region, input.district, rules);
@@ -193,7 +194,7 @@
     const cap = business ? null : policy ? { cap: policy.cap, why: `${policy.name} 자체 한도` } : amountCap(input, location, rules);
 
     // 3) DSR 한도
-    const jeonseInDsr = rules.jeonseInterestInDsrForOneHome && input.jeonse && input.jeonse.has &&
+    const jeonseInDsr = !business && rules.jeonseInterestInDsrForOneHome && input.jeonse && input.jeonse.has &&
       input.jeonse.inCapitalOrRegulated && !input.jeonse.policy &&
       (input.homes === "oneHome" || input.homes === "conditional1Home");
     const existing = (input.existingAnnualPayment || 0) + (jeonseInDsr ? input.jeonse.annualInterest || 0 : 0);
@@ -225,10 +226,11 @@
     // 4) 대출 불가·경고
     if (policy) { blocks.push(...policy.blocks); warnings.push(...policy.warnings); }
     if (business && housing && location !== "local" && input.ltvOverride == null)
-      blocks.push(`${LOCATION_NAMES[location]}에서는 주택 매매·임대사업자의 주택담보대출이 금지됩니다 (2025.9.7 가계부채 보강안, LTV 0%).`);
+      blocks.push(`${LOCATION_NAMES[location]}에서는 주택 매매·임대사업자의 주택담보대출이 금지됩니다 (2025.9.7 가계부채 보강안, LTV 0%). ` +
+        "예외로 준공 1년 이내 신축 비아파트를 처음 사면 규제지역 30%·비규제 60%, 등록임대사업자는 60%까지 됩니다(2026.8.13 대책). 해당하면 'LTV 직접 입력'에 넣으세요.");
     if (business) {
       warnings.push("사업자대출은 DSR에 들어가지 않지만, 1억원 초과 대출은 LTI(전 금융권 대출 ÷ 소득)를 함께 심사하고 10억원 이상이면 심사의견을 반드시 남깁니다.");
-      warnings.push("대출금은 임대업 용도로만 써야 합니다. 주택 구입 등 다른 용도로 쓰면 즉시 회수되고 신규 대출이 제한될 수 있습니다.");
+      warnings.push("대출금은 임대업 용도로만 써야 합니다. 주택 구입 등 다른 용도로 쓰다 적발되면 대출이 회수되고 전 금융권 신규 대출이 1차 3년·2차 10년 제한됩니다 (2026 가계부채 관리방안).");
       if (!housing) warnings.push("사업자대출의 비주택 담보인정비율은 금융기관 내부 기준이라 다를 수 있습니다. 상담받은 비율이 있으면 'LTV 직접 입력'에 넣으세요.");
     }
     if (auction) {
@@ -245,7 +247,7 @@
         input.price > rules.jeonseLoanBlockApartmentPrice && input.jeonse && input.jeonse.has)
         blocks.push(`전세대출을 보유한 채 규제지역 ${rules.jeonseLoanBlockApartmentPrice / 1e8}억 초과 아파트를 구입하는 대출은 불가합니다.`);
     }
-    if (housing && (input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
+    if (!business && housing && (input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
       warnings.push(`신용대출이 ${rules.creditLoanWarnThreshold / 1e8}억을 넘으면 신용대출 실행일부터 1년간 규제지역 주택 구입이 제한됩니다.`);
     if (jeonseInDsr) warnings.push(`1주택자의 수도권·규제지역 전세대출 이자(연 ${Math.round(input.jeonse.annualInterest || 0).toLocaleString("ko-KR")}원)를 DSR에 포함했습니다.`);
     if (dsr.limit !== null && dsr.limit <= 0) warnings.push("기존 대출 상환액만으로 DSR 한도를 넘어 추가 대출 여력이 없습니다.");

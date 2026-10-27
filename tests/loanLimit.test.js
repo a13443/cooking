@@ -283,3 +283,23 @@ test("기존 예시: 1억 × min(70%, 70%) − 2,500만 = 4,500만", () => {
   const r = calcLoanLimit(input({ region: "강원", use: "단독주택", price: 1e8, auctionRate: 0.70, depositTier: "other", houseUnits: 1 }), rules);
   near(r.finalLimit, 45_000_000);
 });
+
+test("비주택(임야·상가)은 지역과 관계없이 기타대출 스트레스 금리 1.5%", () => {
+  const seoul = calcLoanLimit(input({ region: "서울", use: "근린시설", price: 10e8, depositTier: "seoul" }), rules);
+  const local = calcLoanLimit(input({ region: "부산", use: "임야", price: 3e8, depositTier: "metro" }), rules);
+  near(seoul.dsr.stress, 0.015, 1e-12);
+  near(local.dsr.stress, 0.015, 1e-12);
+  assert.equal(seoul.cap, null);
+  assert.equal(seoul.ltv.ratio, 0.70);
+});
+
+test("비주택은 보유 주택 수·대출 목적과 관계없이 LTV 70%, 대출 불가 없음", () => {
+  const r = calcLoanLimit(input({ region: "서울", use: "상가", price: 10e8, homes: "multiHome", purpose: "purchase", depositTier: "seoul" }), rules);
+  assert.equal(r.ltv.ratio, 0.70);
+  assert.equal(r.blocks.length, 0);
+});
+
+test("비주택 담보대출에는 신용대출 1억 초과 주택구입 제한 경고를 띄우지 않음", () => {
+  const r = calcLoanLimit(input({ region: "서울", use: "대지", price: 5e8, creditLoanTotal: 1.5e8, depositTier: "seoul" }), rules);
+  assert.ok(!r.warnings.some((m) => m.includes("신용대출")));
+});

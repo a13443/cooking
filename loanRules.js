@@ -61,6 +61,7 @@
       local: 0.0075,
       unregulatedCapital: 0.030, // 10.15 대책: 수도권·규제지역 주담대 하한 3.0%
       localStage3: 0.015, // localStage3Applied가 true일 때 지방에 쓸 값 (확인 필요)
+      nonHousing: 0.015, // 토지·상가 등 주택 외 담보대출 = 3단계 '기타대출' 기본 스트레스 금리 (2025.7.1~, 지역 무관)
     },
     stressRateFlags: { localStage3Applied: false },
     // 금리 유형별 스트레스 금리 반영 비율 (3단계, 2025.7.1~). 고정금리는 미적용.

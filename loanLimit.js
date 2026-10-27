@@ -67,6 +67,8 @@
   }
 
   function stressRate(input, location, rules) {
+    // 토지·상가 등 주택 외 담보대출은 '기타대출' 스트레스 금리를 지역과 관계없이 쓴다
+    if (!rules.housingUses.includes(input.use)) return rules.stressRate.nonHousing * (rules.stressRateTypeFactor[input.rateType] ?? 1);
     let base = rules.stressRate[location];
     if (location === "local" && rules.stressRateFlags.localStage3Applied) base = rules.stressRate.localStage3;
     return base * (rules.stressRateTypeFactor[input.rateType] ?? 1);
@@ -154,7 +156,7 @@
         input.price > rules.jeonseLoanBlockApartmentPrice && input.jeonse && input.jeonse.has)
         blocks.push(`전세대출을 보유한 채 규제지역 ${rules.jeonseLoanBlockApartmentPrice / 1e8}억 초과 아파트를 구입하는 대출은 불가합니다.`);
     }
-    if ((input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
+    if (housing && (input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
       warnings.push(`신용대출이 ${rules.creditLoanWarnThreshold / 1e8}억을 넘으면 신용대출 실행일부터 1년간 규제지역 주택 구입이 제한됩니다.`);
     if (jeonseInDsr) warnings.push(`1주택자의 수도권·규제지역 전세대출 이자(연 ${Math.round(input.jeonse.annualInterest || 0).toLocaleString("ko-KR")}원)를 DSR에 포함했습니다.`);
     if (dsr.limit !== null && dsr.limit <= 0) warnings.push("기존 대출 상환액만으로 DSR 한도를 넘어 추가 대출 여력이 없습니다.");

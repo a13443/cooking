@@ -198,4 +198,7 @@ def load(path):
 
 
 if __name__ == "__main__":
+    # 윈도우에서 출력을 파이프·Git Bash로 보내면 cp949로 나가 한글이 깨지므로 UTF-8로 고정
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")
     main()

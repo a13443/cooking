@@ -195,7 +195,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
     <p class="alert" id="stale" hidden></p>
     <div class="eyebrow">부동산 담보 · 1단계 계산기</div>
     <h1>내 부동산으로 받을 수 있는 예상 대출금액</h1>
-    <p class="lede">법원경매 매각가율(5년치)과 LTV 중 낮은 비율로 담보 기준 한도를 구하고, 수도권·규제지역 금액 상한과 소득 대비 DSR 한도까지 비교해 가장 작은 값을 보여줍니다.</p>
+    <p class="lede" id="lede">법원경매 매각가율(5년치)과 LTV 중 낮은 비율로 담보 기준 한도를 구하고, 수도권·규제지역 금액 상한과 소득 대비 DSR 한도까지 비교해 가장 작은 값을 보여줍니다.</p>
     <div class="formula" id="formula">대출가능금액 = min( 시가 × min(낙찰가율, LTV) − 소액임차보증금,  가격 구간·목적 상한,  DSR 한도 )</div>
   </header>
 
@@ -349,6 +349,12 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           </div>
         </div>
         <label class="check" id="first-time-label" for="first-time"><input type="checkbox" id="first-time"> 생애최초 주택 구입</label>
+        <div class="field" id="newbuild-field" hidden>
+          <label class="check" for="new-build"><input type="checkbox" id="new-build"> 준공 1년 이내 신축 비아파트를 처음 매입</label>
+          <label class="check" id="registered-label" for="registered"><input type="checkbox" id="registered"> 민간임대주택법 등록임대사업자</label>
+          <span class="hint">2026.8.13 대책 예외: 규제지역 30%·비규제 60%, 등록임대사업자는 지역 무관 60%. 기존 주택은 수도권·규제지역 금지(0%)입니다.</span>
+        </div>
+        <label class="check" id="officetel-label" for="officetel-home" hidden><input type="checkbox" id="officetel-home"> 주거용으로 임대 (RTI 주택 기준 1.25배)</label>
         <div class="field" id="permit-field" hidden>
           <label class="check" for="permit-zone"><input type="checkbox" id="permit-zone"> 토지거래허가구역 안 (비주택까지 포함해 지정된 곳)</label>
           <span class="hint" id="permit-hint"></span>
@@ -577,7 +583,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         <ul id="tips-list"></ul>
       </div>
       <div class="tips" id="invest" hidden>
-        <h3>투자 수익 분석 <span class="hint">대출은 이자만 낸다고 보고(원금 상환 제외) 계산합니다. 세금(임대소득세 등)은 빼지 않았습니다.</span></h3>
+        <h3>투자 수익 분석 <span class="hint">수익률은 대출 이자만 비용으로 봅니다. 분할상환이면 원금까지 낸 현금흐름을 따로 보여줍니다. 세금(임대소득세 등)은 빼지 않았습니다.</span></h3>
         <table class="ledger"><tbody id="invest-rows"></tbody></table>
         <p class="hint" id="invest-maxbid"></p>
       </div>
@@ -775,6 +781,8 @@ function render() {
     depositYield: $("deposit-yield").value === "" ? undefined : Number($("deposit-yield").value) / 100,
     existingBuildingInterest: addLoan ? parseMoney($("existing-balance").value) * (Number($("existing-rate").value) || 0) / 100 : 0,
     rtiStress: $("rti-stress").value === "" ? undefined : Number($("rti-stress").value) / 100,
+    newBuild: business && isHousing && $("new-build").checked, registeredLandlord: $("registered").checked,
+    residentialOfficetel: business && use === "오피스텔" && $("officetel-home").checked,
   };
   if (!isHousing || business) loanInput.repayment = $("repayment").value;
   const r = LoanLimit.calcLoanLimit(loanInput, RULES);
@@ -794,6 +802,13 @@ function render() {
   $("rent-kor").textContent = korMoney(loanInput.monthlyRent);
   $("rent-deposit-kor").textContent = korMoney(loanInput.rentDeposit);
   $("add-loan-field").hidden = auctionDeal;
+  $("newbuild-field").hidden = !(business && isHousing && !RULES.apartmentUses.includes(use));
+  $("registered-label").hidden = !$("new-build").checked;
+  $("officetel-label").hidden = !(business && use === "오피스텔");
+  $("lede").textContent = (business
+    ? "법원경매 매각가율과 LTV로 담보 기준 한도를 구하고, 임대소득으로 감당할 수 있는 이자(RTI) 한도와 비교해 가장 작은 값을 보여줍니다."
+    : "법원경매 매각가율(5년치)과 LTV 중 낮은 비율로 담보 기준 한도를 구하고, 수도권·규제지역 금액 상한과 소득 대비 DSR 한도까지 비교해 가장 작은 값을 보여줍니다.") +
+    (auctionDeal ? " 경매 낙찰이면 감정가·낙찰가로 경락잔금대출 한도를 계산합니다." : "");
   $("add-loan-fields").hidden = !addLoan;
   $("existing-balance-kor").textContent = korMoney(parseMoney($("existing-balance").value));
   $("existing-interest-hint").textContent = addLoan
@@ -912,6 +927,10 @@ function renderInvest(loanInput, r, business, auctionDeal, isHousing) {
     row("−", "연 운영비", "", fmt(e.opex)),
     row("=", "연 순수익", `월 ${korMoney(e.monthly)}`, fmt(e.net), "total"),
     row("", "<strong>자기자본 수익률</strong>", "연 순수익 ÷ 자기자본", `<strong>${pct(e.equityYield)}</strong>`),
+    ...(e.principal > 0 ? [
+      row("−", "연 원금 상환", `분할상환 ${loanInput.years}년 · 내 자산으로 쌓이는 돈`, fmt(e.principal)),
+      row("=", "원금까지 낸 현금흐름", `월 ${korMoney((e.net - e.principal) / 12)}`, fmt(e.net - e.principal), "total"),
+    ] : []),
     row("", "표면 수익률", "연 월세 ÷ (매입가 − 보증금)", pct(e.grossYield)),
   ].join("");
   const t = num("target-yield");
@@ -1138,7 +1157,8 @@ function applyPreset(p) {
   $("deal").value = p.deal || "market";
   $("bid").value = p.bid ? fmt(p.bid) : ""; $("bid-ratio").value = "";
   $("rent").value = p.rent ? fmt(p.rent) : ""; $("rent-deposit").value = p.rentDeposit ? fmt(p.rentDeposit) : "";
-  $("deposit-yield").value = ""; $("add-loan").checked = false; $("existing-balance").value = ""; $("existing-rate").value = ""; $("rti-stress").value = "";
+  $("deposit-yield").value = ""; $("add-loan").checked = false; $("existing-balance").value = ""; $("existing-rate").value = "";
+  $("new-build").checked = $("registered").checked = $("officetel-home").checked = false; $("rti-stress").value = "";
   $("acq-tax").value = ""; $("other-costs").value = p.otherCosts ? fmt(p.otherCosts) : ""; $("opex").value = "";
   $("loan-use").value = ""; $("target-yield").value = p.targetYield ?? "";
   if (p.repayment) $("repayment").value = p.repayment;
@@ -1168,7 +1188,7 @@ function init() {
   ["house-units", "shop-units", "rate-manual", "ltv-manual"].forEach((id) => $(id).addEventListener("input", render));
   ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-product", "household", "jeonse-capital", "jeonse-policy"]
     .forEach((id) => $(id).addEventListener("change", render));
-  $("add-loan").addEventListener("change", render);
+  ["add-loan", "new-build", "registered", "officetel-home"].forEach((id) => $(id).addEventListener("change", render));
   ["loan-rate", "years", "bid-ratio", "deposit-yield", "rti-stress", "existing-rate", "acq-tax", "target-yield"].forEach((id) => $(id).addEventListener("input", render));
   ["borrower", "deal"].forEach((id) => $(id).addEventListener("change", render));
   ["senior", "income", "existing", "credit", "jeonse-interest", "bid", "rent", "rent-deposit", "existing-balance", "other-costs", "opex", "loan-use"].forEach((id) => $(id).addEventListener("input", (e) => {

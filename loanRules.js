@@ -127,6 +127,9 @@
     // 감독규정이 아닌 금융기관 관행 (2차 자료, 확인 필요)
     auctionLoan: { bidRatio: { bank: 0.80, nonBank: 0.90 }, balanceDueMonths: 1 },
 
+    // 취득세 기본값 (취득세 + 농어촌특별세 + 지방교육세). 주택은 주택 수·가격·조정대상지역에 따라 1.1~13.4%라 직접 입력을 권한다.
+    acquisitionTax: { nonHousing: 0.046, housing: 0.011 },
+
     staleAfterMonths: 6, // 규정 기준일에서 이만큼 지나면 화면에 '규정 확인' 경고
     maxLoanYears: 40, // 역산 표시에 쓰는 최장 만기. 은행·지역에 따라 30년으로 제한하기도 함 (확인 필요)
 

@@ -311,6 +311,47 @@
     return tips;
   }
 
-  return { classifyLocation, businessLtvRatio, rtiLimit, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, dsrAnnualPayment, calcLoanLimit, suggestions,
+  /**
+   * 임대 투자 수익 분석. 대출은 이자만 낸다고 보고(원금 상환 제외) 연 순수익을 계산한다.
+   * opts: { acqTaxRate(소수, 없으면 용도별 기본값), otherCosts, loanAmount(없으면 예상 대출가능금액), monthlyOpex, targetYield(소수) }
+   * 경매면 매입가 = 낙찰가, 아니면 시세. 임차인 보증금은 매입 자금에서 뺀다.
+   */
+  function investment(input, rules, opts = {}) {
+    const housing = rules.housingUses.includes(input.use);
+    const taxRate = opts.acqTaxRate ?? (housing ? rules.acquisitionTax.housing : rules.acquisitionTax.nonHousing);
+    const evaluate = (over) => {
+      const inp = { ...input, ...over };
+      const r = calcLoanLimit(inp, rules);
+      const price = r.auction ? r.auction.bid : inp.price;
+      const loan = Math.max(0, opts.loanAmount != null ? Math.min(opts.loanAmount, r.finalLimit) : r.finalLimit);
+      const tax = price * taxRate;
+      const total = price + tax + (opts.otherCosts || 0);
+      const deposit = inp.rentDeposit || 0;
+      const equity = total - loan - deposit;
+      const rentYear = (inp.monthlyRent || 0) * 12;
+      const interest = loan * inp.rate;
+      const opex = (opts.monthlyOpex || 0) * 12;
+      const net = rentYear - interest - opex;
+      return { price, loan, limit: r.finalLimit, tax, taxRate, total, deposit, equity, rentYear, interest, opex, net,
+        monthly: net / 12, grossYield: price - deposit > 0 ? rentYear / (price - deposit) : null,
+        equityYield: equity > 0 ? net / equity : null };
+    };
+    const result = evaluate({});
+    // 목표 자기자본 수익률이 나오는 최대 낙찰가 (경매만). 낙찰가가 오르면 수익률이 내려가므로 이분법으로 찾는다.
+    if (input.deal === "auction" && opts.targetYield > 0 && input.price > 0) {
+      const ok = (bid) => { const e = evaluate({ bid }); return e.net > 0 && (e.equity <= 0 || e.net / e.equity >= opts.targetYield); };
+      let lo = input.price * 0.01, hi = input.price * 2;
+      if (!ok(lo)) result.maxBid = 0;
+      else if (ok(hi)) { result.maxBid = hi; result.maxBidRate = 2; }
+      else {
+        for (let i = 0; i < 50; i++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
+        result.maxBid = Math.floor(lo / 1e5) * 1e5;
+        result.maxBidRate = result.maxBid / input.price;
+      }
+    }
+    return result;
+  }
+
+  return { classifyLocation, businessLtvRatio, rtiLimit, investment, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, dsrAnnualPayment, calcLoanLimit, suggestions,
     LOCATION_NAMES, HOMES_NAMES, PURPOSE_NAMES };
 });

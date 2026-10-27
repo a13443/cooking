@@ -487,6 +487,39 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         </div>
       </div>
 
+      <div class="group" id="invest-group" hidden>
+        <h2>취득 비용과 수익률</h2>
+        <div class="row">
+          <div class="field">
+            <label for="acq-tax">취득세율 (%)</label>
+            <input id="acq-tax" type="number" min="0" max="20" step="0.1">
+            <span class="hint" id="acq-tax-hint"></span>
+          </div>
+          <div class="field">
+            <label for="other-costs">기타 비용 (원)</label>
+            <input id="other-costs" class="money" type="text" inputmode="numeric" autocomplete="off">
+            <span class="hint">법무비, 중개보수, 명도비, 수리비 등</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="opex">월 운영비 (원)</label>
+            <input id="opex" class="money" type="text" inputmode="numeric" autocomplete="off">
+            <span class="hint">임대인이 내는 관리비, 보험료, 공실 대비금 등</span>
+          </div>
+          <div class="field">
+            <label for="loan-use">쓸 대출금 (원)</label>
+            <input id="loan-use" class="money" type="text" inputmode="numeric" autocomplete="off" placeholder="비우면 예상 대출가능금액">
+            <span class="hint" id="loan-use-hint"></span>
+          </div>
+        </div>
+        <div class="field" id="target-field">
+          <label for="target-yield">목표 자기자본 수익률 (%)</label>
+          <input id="target-yield" type="number" min="0" max="100" step="0.5">
+          <span class="hint">이 수익률이 나오는 최대 낙찰가를 계산합니다.</span>
+        </div>
+      </div>
+
       <div class="group">
         <h2>소액임차보증금 (방공제)</h2>
         <div class="field">
@@ -533,6 +566,11 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
       <div class="tips" id="tips" hidden>
         <h3>한도를 늘리려면 <span class="hint"><span id="tips-why">DSR</span>이 한도를 정했습니다. 조건을 하나씩만 바꿨을 때의 한도입니다.</span></h3>
         <ul id="tips-list"></ul>
+      </div>
+      <div class="tips" id="invest" hidden>
+        <h3>투자 수익 분석 <span class="hint">대출은 이자만 낸다고 보고(원금 상환 제외) 계산합니다. 세금(임대소득세 등)은 빼지 않았습니다.</span></h3>
+        <table class="ledger"><tbody id="invest-rows"></tbody></table>
+        <p class="hint" id="invest-maxbid"></p>
       </div>
       <p class="note">감정평가 결과는 반영하지 않았습니다.</p>
       <div class="actions">
@@ -820,8 +858,50 @@ function render() {
     return `<li><span>${label}</span><span class="v">${korMoney(t.amount)}</span><span class="d">${desc}</span></li>`;
   }).join("");
 
+  renderInvest(loanInput, r, business, auctionDeal, isHousing);
   renderBars(region, use);
   renderTradeBox();
+}
+
+// 임대사업자 투자 수익 분석 (loanLimit.js investment)
+function renderInvest(loanInput, r, business, auctionDeal, isHousing) {
+  $("invest-group").hidden = !business;
+  $("target-field").hidden = !auctionDeal;
+  const defaultTax = (isHousing ? RULES.acquisitionTax.housing : RULES.acquisitionTax.nonHousing) * 100;
+  $("acq-tax").placeholder = defaultTax;
+  $("acq-tax-hint").textContent = isHousing
+    ? `비우면 ${defaultTax}%. 주택은 주택 수·가격·조정대상지역에 따라 1.1~13.4%라 직접 확인하세요.`
+    : `비우면 ${defaultTax}% (취득세 4% + 농어촌특별세 0.2% + 지방교육세 0.4%)`;
+  $("loan-use-hint").textContent = r.finalLimit > 0 ? `대출가능금액 ${korMoney(r.finalLimit)}까지` : "";
+  const show = business && r.finalLimit >= 0 && (loanInput.monthlyRent || loanInput.rentDeposit);
+  $("invest").hidden = !show;
+  if (!show) return;
+  const num = (id) => ($(id).value === "" ? undefined : Number($(id).value) / 100);
+  const e = LoanLimit.investment(loanInput, RULES, {
+    acqTaxRate: num("acq-tax"), otherCosts: parseMoney($("other-costs").value), monthlyOpex: parseMoney($("opex").value),
+    loanAmount: $("loan-use").value === "" ? null : parseMoney($("loan-use").value), targetYield: num("target-yield"),
+  });
+  const pct = (v) => (v == null ? "–" : (v * 100).toFixed(1) + "%");
+  const row = (op, label, sub, amt, cls = "") => `<tr${cls ? ` class="${cls}"` : ""}><td class="op">${op}</td><td>${label}<span class="sub">${sub}</span></td><td class="amt">${amt}</td></tr>`;
+  $("invest-rows").innerHTML = [
+    row("", auctionDeal ? "낙찰가" : "매입가(시세)", korMoney(e.price), fmt(e.price)),
+    row("+", "취득세", `${(e.taxRate * 100).toFixed(1)}%`, fmt(e.tax)),
+    row("+", "기타 비용", "법무비·명도비·수리비 등", fmt(parseMoney($("other-costs").value))),
+    row("−", "대출", e.loan < e.limit ? `대출가능금액 ${korMoney(e.limit)} 중` : "예상 대출가능금액 전부", fmt(e.loan)),
+    row("−", "임차인 보증금", "임차인에게 받아 매입 자금에 씀", fmt(e.deposit)),
+    row("=", "필요한 내 돈 (자기자본)", korMoney(e.equity), fmt(e.equity), "total"),
+    row("", "연 월세 수입", `월 ${korMoney(e.rentYear / 12)}`, fmt(e.rentYear)),
+    row("−", "연 대출 이자", `금리 ${(loanInput.rate * 100).toFixed(2)}%`, fmt(e.interest)),
+    row("−", "연 운영비", "", fmt(e.opex)),
+    row("=", "연 순수익", `월 ${korMoney(e.monthly)}`, fmt(e.net), "total"),
+    row("", "<strong>자기자본 수익률</strong>", "연 순수익 ÷ 자기자본", `<strong>${pct(e.equityYield)}</strong>`),
+    row("", "표면 수익률", "연 월세 ÷ (매입가 − 보증금)", pct(e.grossYield)),
+  ].join("");
+  const t = num("target-yield");
+  $("invest-maxbid").textContent = !auctionDeal || !t ? ""
+    : e.maxBid > 0 ? `목표 자기자본 수익률 ${(t * 100).toFixed(1)}%가 나오는 최대 낙찰가는 약 ${korMoney(e.maxBid)}입니다 (감정가의 ${(e.maxBidRate * 100).toFixed(1)}%). 대출 한도도 낙찰가에 따라 다시 계산했습니다.`
+      : `지금 월세로는 목표 자기자본 수익률 ${(t * 100).toFixed(1)}%가 나오지 않습니다.`;
+  if (e.equity <= 0) $("invest-maxbid").textContent += " 대출과 보증금만으로 매입 비용을 넘어 자기자본 수익률은 계산하지 않았습니다.";
 }
 
 // 실거래가 (data/trades.js, scripts/fetch_trades.py 로 생성). 데이터가 있는 시도의 아파트일 때만 보인다.
@@ -1042,6 +1122,8 @@ function applyPreset(p) {
   $("bid").value = p.bid ? fmt(p.bid) : ""; $("bid-ratio").value = "";
   $("rent").value = p.rent ? fmt(p.rent) : ""; $("rent-deposit").value = p.rentDeposit ? fmt(p.rentDeposit) : "";
   $("deposit-yield").value = ""; $("building-interest").value = ""; $("rti-stress").value = "";
+  $("acq-tax").value = ""; $("other-costs").value = p.otherCosts ? fmt(p.otherCosts) : ""; $("opex").value = "";
+  $("loan-use").value = ""; $("target-yield").value = p.targetYield ?? "";
   if (p.repayment) $("repayment").value = p.repayment;
   render();
 }
@@ -1069,9 +1151,9 @@ function init() {
   ["house-units", "shop-units", "rate-manual", "ltv-manual"].forEach((id) => $(id).addEventListener("input", render));
   ["district", "homes", "purpose", "first-time", "sector", "rate-type", "policy-product", "household", "jeonse-capital", "jeonse-policy"]
     .forEach((id) => $(id).addEventListener("change", render));
-  ["loan-rate", "years", "bid-ratio", "deposit-yield", "rti-stress"].forEach((id) => $(id).addEventListener("input", render));
+  ["loan-rate", "years", "bid-ratio", "deposit-yield", "rti-stress", "acq-tax", "target-yield"].forEach((id) => $(id).addEventListener("input", render));
   ["borrower", "deal"].forEach((id) => $(id).addEventListener("change", render));
-  ["senior", "income", "existing", "credit", "jeonse-interest", "bid", "rent", "rent-deposit", "building-interest"].forEach((id) => $(id).addEventListener("input", (e) => {
+  ["senior", "income", "existing", "credit", "jeonse-interest", "bid", "rent", "rent-deposit", "building-interest", "other-costs", "opex", "loan-use"].forEach((id) => $(id).addEventListener("input", (e) => {
     const n = parseMoney(e.target.value);
     e.target.value = n ? fmt(n) : "";
     render();
@@ -1111,7 +1193,7 @@ function init() {
   $("preset-jeju").addEventListener("click", () => applyPreset({ region: "제주", use: "임야", price: 3e8 }));
   $("preset-apt").addEventListener("click", () => applyPreset({ region: "서울", use: "아파트", price: 18e8, income: 2e8 }));
   $("preset-auction").addEventListener("click", () => applyPreset({ region: "제주", use: "상가", price: 8e8, bid: 5.6e8, borrower: "business",
-    deal: "auction", rent: 3.5e6, rentDeposit: 5e7, loanRate: 5, years: 10, repayment: "bullet", shop: 1 }));
+    deal: "auction", rent: 3.5e6, rentDeposit: 5e7, loanRate: 5, years: 10, repayment: "bullet", shop: 1, otherCosts: 1e7, targetYield: 8 }));
   $("preset-seoul").addEventListener("click", () => applyPreset({ region: "서울", use: "근린시설", price: 1e9, house: 0, shop: 3 }));
 
   $("copy-link").addEventListener("click", () => {

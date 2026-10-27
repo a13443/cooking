@@ -438,3 +438,33 @@ test("주택 임대사업자 수도권 금지 안내에 8·13 신축 비아파�
   const r = calcLoanLimit(input({ use: "연립·다세대", borrower: "business", monthlyRent: 3e6 }), rules);
   assert.ok(r.blocks.some((m) => m.includes("신축 비아파트")));
 });
+
+// ---- 투자 수익 분석 ----
+const { investment } = require("../loanLimit.js");
+const auctionBiz = () => biz({ price: 8e8, auctionRate: 0.554, deal: "auction", bid: 5.6e8, monthlyRent: 3.5e6, rentDeposit: 5e7 });
+
+test("투자 분석: 자기자본 = 낙찰가 + 취득세 4.6% + 기타 비용 − 대출 − 보증금, 수익률 = (월세 − 이자) ÷ 자기자본", () => {
+  const e = investment(auctionBiz(), rules, { otherCosts: 1e7 });
+  assert.equal(e.loan, 3.82e8); // 담보 기준 한도가 결정
+  near(e.tax, 25.76e6);
+  near(e.equity, 5.6e8 + 25.76e6 + 1e7 - 3.82e8 - 5e7);
+  near(e.net, 42e6 - 3.82e8 * 0.05);
+  near(e.equityYield, e.net / e.equity, 1e-9);
+});
+
+test("투자 분석: 쓸 대출금을 정하면 한도 안에서 그 금액만", () => {
+  assert.equal(investment(auctionBiz(), rules, { loanAmount: 3e8 }).loan, 3e8);
+  assert.equal(investment(auctionBiz(), rules, { loanAmount: 9e8 }).loan, 3.82e8);
+});
+
+test("투자 분석: 목표 수익률의 최대 낙찰가에서 수익률이 목표와 같다", () => {
+  const e = investment(auctionBiz(), rules, { otherCosts: 1e7, targetYield: 0.08 });
+  assert.ok(e.maxBid > 5.6e8 && e.maxBid < 8e8);
+  const at = investment({ ...auctionBiz(), bid: e.maxBid }, rules, { otherCosts: 1e7 });
+  assert.ok(Math.abs(at.equityYield - 0.08) < 0.001, String(at.equityYield));
+});
+
+test("투자 분석: 순수익이 없으면(월세 0) 최대 낙찰가 0", () => {
+  const e = investment({ ...auctionBiz(), monthlyRent: 0, rentDeposit: 0 }, rules, { targetYield: 0.05 });
+  assert.equal(e.maxBid, 0);
+});

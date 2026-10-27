@@ -1,0 +1,7 @@
+{
+  "name": "collateral-loan-estimator",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/loanLimit.test.js"
+  }
+}

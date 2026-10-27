@@ -37,6 +37,38 @@
     return { ratio: T[input.homes], why: `${name} ${HOMES_NAMES[input.homes]} 주택구입` };
   }
 
+  // 임대사업자 사업자대출 LTV. 주택은 수도권·규제지역 금지(0%), 지방 60%. 비주택은 비주택담보대출 LTV를 쓴다.
+  function businessLtvRatio(input, location, rules) {
+    if (!rules.housingUses.includes(input.use)) {
+      const l = ltvRatio(input, location, rules);
+      return { ratio: l.ratio, why: `임대사업자 ${l.why}` };
+    }
+    if (location === "local") return { ratio: rules.business.housingLtvLocal, why: "지방 주택 임대·매매사업자" };
+    return { ratio: 0, why: `${LOCATION_NAMES[location]} 주택 임대·매매사업자 (주택담보대출 금지)` };
+  }
+
+  // RTI 한도. 연 임대소득 ÷ RTI 기준 − 해당 건물 기존 대출 이자 = 이번 대출에 쓸 수 있는 연 이자.
+  // 1억원 이하 대출은 RTI 심사 제외이므로 RTI 한도가 1억보다 작으면 1억까지는 가능하다.
+  function rtiLimit(input, rules) {
+    const B = rules.business;
+    const housing = rules.housingUses.includes(input.use);
+    const threshold = housing ? B.rti.housing : B.rti.nonHousing;
+    const depositYield = input.depositYield ?? B.depositYield;
+    const income = (input.monthlyRent || 0) * 12 + (input.rentDeposit || 0) * depositYield;
+    const stress = input.rateType === "fixed" ? 0 : Math.max(B.rtiStressMin, input.rtiStress ?? 0);
+    const existing = input.existingBuildingInterest || 0;
+    const base = { threshold, income, stress, existing, depositYield };
+    if (!input.monthlyRent && !input.rentDeposit) return { ...base, limit: null, excluded: true, why: "월세·보증금을 입력하면 RTI 한도를 계산합니다" };
+    const rate = input.rate + stress;
+    const room = income / threshold - existing;
+    const byRti = room <= 0 ? 0 : rate > 0 ? room / rate : Infinity;
+    const why = `RTI ${threshold}배 · 연 임대소득 ${Math.round(income / 1e4).toLocaleString("ko-KR")}만원 · 금리 ${(input.rate * 100).toFixed(2)}%` +
+      (stress ? ` + 스트레스 ${(stress * 100).toFixed(2)}%` : " (고정금리)");
+    if (byRti < B.rtiExemptAmount) return { ...base, limit: B.rtiExemptAmount, byRti, excluded: false, exempt: true,
+      why: `RTI 기준 ${Math.round(byRti / 1e4).toLocaleString("ko-KR")}만원이지만 ${B.rtiExemptAmount / 1e8}억 이하 대출은 RTI 심사 제외` };
+    return { ...base, limit: byRti, byRti, excluded: false, why };
+  }
+
   // 가격 구간·목적별 금액 상한 (수도권 전체 + 규제지역). 해당 없으면 null.
   function amountCap(input, location, rules) {
     if (location === "local" || !rules.housingUses.includes(input.use)) return null;
@@ -113,42 +145,65 @@
    *   annualIncome, existingAnnualPayment, sector('bank'|'nonBank'), rateType, rate(소수), years, policyMortgage(기타 정책모기지),
    *   policyProduct('didimdol'|'bogeumjari'|''), household('general'|'newlywed'|'multiChild'),
    *   creditLoanTotal, jeonse: { has, inCapitalOrRegulated, policy, annualInterest },
-   *   depositTier, houseUnits, shopUnits, seniorDebt(선순위 채권최고액) }
+   *   depositTier, houseUnits, shopUnits, seniorDebt(선순위 채권최고액, 경매면 인수할 금액),
+   *   borrower('personal'|'business'), deal('market'|'auction'),
+   *   경매: price=감정가, bid(낙찰가, 0이면 감정가 × 낙찰가율로 예상), bidRatio(낙찰가 인정 비율, 없으면 금융권별 기본값),
+   *   임대사업자: monthlyRent, rentDeposit, depositYield, existingBuildingInterest(해당 건물 기존 대출 연 이자),
+   *     rtiStress(변동금리 스트레스, 최소값보다 작으면 최소값) }
    */
   function calcLoanLimit(input, rules) {
     const location = classifyLocation(input.region, input.district, rules);
     const housing = rules.housingUses.includes(input.use);
+    const business = input.borrower === "business";
     const warnings = [];
     const blocks = [];
 
+    // 경매 낙찰: 담보가치 = min(감정가, 낙찰가). 낙찰가를 모르면 감정가 × 낙찰가율로 예상한다.
+    let auction = null;
+    if (input.deal === "auction") {
+      const bidEstimated = !(input.bid > 0);
+      const bid = bidEstimated ? input.price * input.auctionRate : input.bid;
+      const bidRatio = input.bidRatio ?? rules.auctionLoan.bidRatio[input.sector];
+      auction = { appraisal: input.price, bid, bidEstimated, bidRatio, value: Math.min(input.price, bid) };
+      input = { ...input, price: auction.value }; // 가격 구간 상한 등은 담보가치로 판단
+    }
+
     // 1) 담보 기준 한도 = 시가 × min(낙찰가율, LTV) − 소액임차보증금 − 선순위 채권
-    const policy = input.policyProduct ? policyTerms(input, location, rules) : null;
-    let ltv = ltvRatio(input, location, rules);
+    //    경매는 min(담보가치 × LTV, 낙찰가 × 인정 비율) − 소액임차보증금 − 인수할 금액
+    const policy = !business && input.policyProduct ? policyTerms(input, location, rules) : null;
+    let ltv = business ? businessLtvRatio(input, location, rules) : ltvRatio(input, location, rules);
     // 정책모기지는 상품 LTV와 지역 규제 LTV 중 낮은 값 (보수적 가정)
     if (policy && policy.ltv < ltv.ratio) ltv = { ratio: policy.ltv, why: `${policy.name} 상품 기준` };
     const ltvApplied = input.ltvOverride != null ? input.ltvOverride : ltv.ratio;
-    const ratio = Math.min(input.auctionRate, ltvApplied);
-    const expectedBid = input.price * input.auctionRate;
+    const ratio = auction ? ltvApplied : Math.min(input.auctionRate, ltvApplied);
+    const expectedBid = auction ? auction.bid : input.price * input.auctionRate;
     const dep = smallDeposit(input, rules);
     const depositCap = expectedBid * rules.smallDepositCapRatio;
     const deduction = Math.min(dep.raw, depositCap);
     const seniorDebt = Math.max(0, input.seniorDebt || 0);
-    const beforeSenior = Math.max(0, input.price * ratio - deduction);
+    if (auction) {
+      auction.byLtv = auction.value * ltvApplied;
+      auction.byBid = auction.bid * auction.bidRatio;
+    }
+    const gross = auction ? Math.min(auction.byLtv, auction.byBid) : input.price * ratio;
+    const beforeSenior = Math.max(0, gross - deduction);
     const collateralLimit = Math.max(0, beforeSenior - seniorDebt);
 
     // 2) 가격 구간·이주비 상한
     // 정책모기지는 가격 구간 상한 대신 상품 자체 한도
-    const cap = policy ? { cap: policy.cap, why: `${policy.name} 자체 한도` } : amountCap(input, location, rules);
+    const cap = business ? null : policy ? { cap: policy.cap, why: `${policy.name} 자체 한도` } : amountCap(input, location, rules);
 
     // 3) DSR 한도
-    const jeonseInDsr = rules.jeonseInterestInDsrForOneHome && input.jeonse && input.jeonse.has &&
+    const jeonseInDsr = !business && rules.jeonseInterestInDsrForOneHome && input.jeonse && input.jeonse.has &&
       input.jeonse.inCapitalOrRegulated && !input.jeonse.policy &&
       (input.homes === "oneHome" || input.homes === "conditional1Home");
     const existing = (input.existingAnnualPayment || 0) + (jeonseInDsr ? input.jeonse.annualInterest || 0 : 0);
     const stress = stressRate(input, location, rules);
     const dsrRatio = rules.dsrLimit[input.sector];
     let dsr;
-    if ((input.policyMortgage || policy) && rules.policyMortgageExcludedFromDSR) {
+    if (business) {
+      dsr = { limit: null, excluded: true, why: "사업자대출은 DSR 계산에 들어가지 않습니다" };
+    } else if ((input.policyMortgage || policy) && rules.policyMortgageExcludedFromDSR) {
       dsr = { limit: null, excluded: true, why: "정책모기지는 DSR 계산 제외" };
     } else if (!input.annualIncome && !input.dsrExempt) {
       dsr = { limit: null, excluded: true, why: "연소득을 입력하면 DSR 한도를 계산합니다" };
@@ -165,9 +220,25 @@
       }
     }
 
+    // 임대사업자는 DSR 대신 RTI
+    const rti = business ? rtiLimit(input, rules) : null;
+
     // 4) 대출 불가·경고
     if (policy) { blocks.push(...policy.blocks); warnings.push(...policy.warnings); }
-    if (housing && location !== "local") {
+    if (business && housing && location !== "local" && input.ltvOverride == null)
+      blocks.push(`${LOCATION_NAMES[location]}에서는 주택 매매·임대사업자의 주택담보대출이 금지됩니다 (2025.9.7 가계부채 보강안, LTV 0%). ` +
+        "예외로 준공 1년 이내 신축 비아파트를 처음 사면 규제지역 30%·비규제 60%, 등록임대사업자는 60%까지 됩니다(2026.8.13 대책). 해당하면 'LTV 직접 입력'에 넣으세요.");
+    if (business) {
+      warnings.push("사업자대출은 DSR에 들어가지 않지만, 1억원 초과 대출은 LTI(전 금융권 대출 ÷ 소득)를 함께 심사하고 10억원 이상이면 심사의견을 반드시 남깁니다.");
+      warnings.push("대출금은 임대업 용도로만 써야 합니다. 주택 구입 등 다른 용도로 쓰다 적발되면 대출이 회수되고 전 금융권 신규 대출이 1차 3년·2차 10년 제한됩니다 (2026 가계부채 관리방안).");
+      if (!housing) warnings.push("사업자대출의 비주택 담보인정비율은 금융기관 내부 기준이라 다를 수 있습니다. 상담받은 비율이 있으면 'LTV 직접 입력'에 넣으세요.");
+    }
+    if (auction) {
+      if (auction.bidEstimated) warnings.push(`낙찰가를 비워 감정가 × 낙찰가율 ${(input.auctionRate * 100).toFixed(1)}%로 예상했습니다. 낙찰받으면 실제 낙찰가를 넣으세요.`);
+      else if (auction.bid > auction.appraisal) warnings.push("낙찰가가 감정가보다 높아 담보가치는 감정가로 봅니다.");
+      warnings.push(`잔금은 매각허가결정 확정 후 보통 ${rules.auctionLoan.balanceDueMonths}개월 안에 내야 하고, 못 내면 입찰보증금을 잃습니다. 대출 상담은 입찰 전에 받아 두세요.`);
+    }
+    if (!business && housing && location !== "local") {
       if (input.purpose === "purchase" && ltvApplied === 0 && input.ltvOverride == null)
         blocks.push(`${LOCATION_NAMES[location]} ${HOMES_NAMES[input.homes]} 차주의 주택구입 목적 대출은 불가합니다 (LTV 0%).`);
       if (input.purpose === "livingStability" && input.homes === "multiHome" && rules.livingStabilityMultiHomeBanned)
@@ -176,21 +247,23 @@
         input.price > rules.jeonseLoanBlockApartmentPrice && input.jeonse && input.jeonse.has)
         blocks.push(`전세대출을 보유한 채 규제지역 ${rules.jeonseLoanBlockApartmentPrice / 1e8}억 초과 아파트를 구입하는 대출은 불가합니다.`);
     }
-    if (housing && (input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
+    if (!business && housing && (input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
       warnings.push(`신용대출이 ${rules.creditLoanWarnThreshold / 1e8}억을 넘으면 신용대출 실행일부터 1년간 규제지역 주택 구입이 제한됩니다.`);
     if (jeonseInDsr) warnings.push(`1주택자의 수도권·규제지역 전세대출 이자(연 ${Math.round(input.jeonse.annualInterest || 0).toLocaleString("ko-KR")}원)를 DSR에 포함했습니다.`);
     if (dsr.limit !== null && dsr.limit <= 0) warnings.push("기존 대출 상환액만으로 DSR 한도를 넘어 추가 대출 여력이 없습니다.");
     if (seniorDebt > 0 && seniorDebt >= beforeSenior) warnings.push("선순위 채권이 담보인정액 이상이라 이 담보로 추가 대출 여력이 없습니다.");
 
     // 5) 최종 한도와 결정 요인
-    const candidates = [{ key: ratio < ltvApplied ? "auction" : "ltv", amount: collateralLimit }];
+    const collateralKey = auction ? (auction.byBid < auction.byLtv ? "bid" : "ltv") : ratio < ltvApplied ? "auction" : "ltv";
+    const candidates = [{ key: collateralKey, amount: collateralLimit }];
     if (cap) candidates.push({ key: "cap", amount: cap.cap });
     if (dsr.limit !== null) candidates.push({ key: "dsr", amount: Math.max(0, dsr.limit) });
+    if (rti && rti.limit !== null) candidates.push({ key: "rti", amount: Math.max(0, rti.limit) });
     const binding = candidates.reduce((a, b) => (b.amount < a.amount ? b : a));
     const finalLimit = blocks.length ? 0 : binding.amount;
 
     return {
-      location, locationName: LOCATION_NAMES[location], housing,
+      location, locationName: LOCATION_NAMES[location], housing, business, auction, rti,
       ltv: { ratio: ltvApplied, policyRatio: ltv.ratio, why: ltv.why, overridden: input.ltvOverride != null },
       ratio, expectedBid,
       deposit: { tier: dep.tier, raw: dep.raw, cap: depositCap, deduction },
@@ -205,6 +278,7 @@
    */
   function suggestions(input, rules) {
     const r = calcLoanLimit(input, rules);
+    if (r.binding === "rti") return rtiSuggestions(input, r, rules);
     if (r.binding !== "dsr") return [];
     const tips = [];
     const ceiling = Math.min(r.collateralLimit, r.cap ? r.cap.cap : Infinity); // DSR을 빼고 남는 한도
@@ -223,6 +297,61 @@
     return tips;
   }
 
-  return { classifyLocation, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, dsrAnnualPayment, calcLoanLimit, suggestions,
+  // RTI가 한도를 정했을 때: 담보 기준 한도까지 받으려면 필요한 월세, 고정금리로 바꿨을 때 한도
+  function rtiSuggestions(input, r, rules) {
+    const tips = [];
+    const R = r.rti;
+    const need = R.threshold * (r.collateralLimit * (input.rate + R.stress) + R.existing);
+    const rent = (need - (input.rentDeposit || 0) * R.depositYield) / 12;
+    if (rent > (input.monthlyRent || 0)) tips.push({ key: "rent", value: Math.ceil(rent / 1e4) * 1e4, amount: r.collateralLimit });
+    if (R.stress > 0) {
+      const amount = calcLoanLimit({ ...input, rateType: "fixed" }, rules).finalLimit;
+      if (amount > r.finalLimit + 1) tips.push({ key: "fixed", value: null, amount });
+    }
+    return tips;
+  }
+
+  /**
+   * 임대 투자 수익 분석. 대출은 이자만 낸다고 보고(원금 상환 제외) 연 순수익을 계산한다.
+   * opts: { acqTaxRate(소수, 없으면 용도별 기본값), otherCosts, loanAmount(없으면 예상 대출가능금액), monthlyOpex, targetYield(소수) }
+   * 경매면 매입가 = 낙찰가, 아니면 시세. 임차인 보증금은 매입 자금에서 뺀다.
+   */
+  function investment(input, rules, opts = {}) {
+    const housing = rules.housingUses.includes(input.use);
+    const taxRate = opts.acqTaxRate ?? (housing ? rules.acquisitionTax.housing : rules.acquisitionTax.nonHousing);
+    const evaluate = (over) => {
+      const inp = { ...input, ...over };
+      const r = calcLoanLimit(inp, rules);
+      const price = r.auction ? r.auction.bid : inp.price;
+      const loan = Math.max(0, opts.loanAmount != null ? Math.min(opts.loanAmount, r.finalLimit) : r.finalLimit);
+      const tax = price * taxRate;
+      const total = price + tax + (opts.otherCosts || 0);
+      const deposit = inp.rentDeposit || 0;
+      const equity = total - loan - deposit;
+      const rentYear = (inp.monthlyRent || 0) * 12;
+      const interest = loan * inp.rate;
+      const opex = (opts.monthlyOpex || 0) * 12;
+      const net = rentYear - interest - opex;
+      return { price, loan, limit: r.finalLimit, tax, taxRate, total, deposit, equity, rentYear, interest, opex, net,
+        monthly: net / 12, grossYield: price - deposit > 0 ? rentYear / (price - deposit) : null,
+        equityYield: equity > 0 ? net / equity : null };
+    };
+    const result = evaluate({});
+    // 목표 자기자본 수익률이 나오는 최대 낙찰가 (경매만). 낙찰가가 오르면 수익률이 내려가므로 이분법으로 찾는다.
+    if (input.deal === "auction" && opts.targetYield > 0 && input.price > 0) {
+      const ok = (bid) => { const e = evaluate({ bid }); return e.net > 0 && (e.equity <= 0 || e.net / e.equity >= opts.targetYield); };
+      let lo = input.price * 0.01, hi = input.price * 2;
+      if (!ok(lo)) result.maxBid = 0;
+      else if (ok(hi)) { result.maxBid = hi; result.maxBidRate = 2; }
+      else {
+        for (let i = 0; i < 50; i++) { const mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
+        result.maxBid = Math.floor(lo / 1e5) * 1e5;
+        result.maxBidRate = result.maxBid / input.price;
+      }
+    }
+    return result;
+  }
+
+  return { classifyLocation, businessLtvRatio, rtiLimit, investment, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, dsrAnnualPayment, calcLoanLimit, suggestions,
     LOCATION_NAMES, HOMES_NAMES, PURPOSE_NAMES };
 });

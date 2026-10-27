@@ -805,6 +805,20 @@ function chooseComplex(name) {
   renderTradeBox();
   saveState();
 }
+// 실거래가 시·군·구와 LTV 계산용 시·군·구는 이름이 같으면 서로 따라간다
+function syncDistrictFromTrade() {
+  const name = window.TRADES.regions[$("trade-sgg").value].name;
+  if ($("district-field").hidden) return;
+  $("district").value = [...$("district").options].some((o) => o.value === name) ? name : "기타";
+}
+function syncTradeFromDistrict() {
+  if (!window.TRADES || $("trade-box").hidden) return;
+  const hit = Object.entries(window.TRADES.regions).find(([, r]) => r.sido === $("region").value && r.name === $("district").value);
+  if (!hit || hit[0] === $("trade-sgg").value) return;
+  $("trade-sgg").value = hit[0];
+  $("trade-apt").value = "";
+  renderTradeBox();
+}
 function useTradePrice(kind) {
   const cx = tradeRegion().complexes[selectedComplex()];
   const st = cx[pickArea(cx)];
@@ -964,7 +978,8 @@ function init() {
     else done("주소창의 링크를 복사하세요.");
   });
   $("print").addEventListener("click", () => window.print());
-  $("trade-sgg").addEventListener("change", () => { $("trade-apt").value = ""; renderTradeBox(); saveState(); });
+  $("trade-sgg").addEventListener("change", () => { $("trade-apt").value = ""; syncDistrictFromTrade(); render(); });
+  $("district").addEventListener("change", () => { syncTradeFromDistrict(); saveState(); });
   const apt = $("trade-apt");
   apt.addEventListener("focus", openCombo);
   apt.addEventListener("click", () => { if ($("trade-apt-list").hidden) openCombo(); });

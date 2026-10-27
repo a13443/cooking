@@ -468,3 +468,27 @@ test("투자 분석: 순수익이 없으면(월세 0) 최대 낙찰가 0", () =>
   const e = investment({ ...auctionBiz(), monthlyRent: 0, rentDeposit: 0 }, rules, { targetYield: 0.05 });
   assert.equal(e.maxBid, 0);
 });
+
+// ---- 8·13 신축 비아파트, 주거용 오피스텔, 분할상환 현금흐름 ----
+test("8·13 신축 비아파트: 규제지역 30%, 비규제 수도권 60%, 등록임대사업자 60%, 아파트는 해당 없음", () => {
+  const base = { use: "연립·다세대", price: 5e8, borrower: "business", monthlyRent: 2e6, newBuild: true };
+  const seoul = calcLoanLimit(input(base), rules);
+  assert.equal(seoul.ltv.ratio, 0.30);
+  assert.notEqual(seoul.binding, "blocked");
+  assert.equal(calcLoanLimit(input({ ...base, region: "인천", depositTier: "dense" }), rules).ltv.ratio, 0.60);
+  assert.equal(calcLoanLimit(input({ ...base, registeredLandlord: true }), rules).ltv.ratio, 0.60);
+  assert.equal(calcLoanLimit(input({ ...base, use: "아파트" }), rules).binding, "blocked");
+});
+
+test("주거용 오피스텔 임대: RTI 1.25배, LTV는 비주택 그대로", () => {
+  const r = calcLoanLimit(biz({ use: "오피스텔", residentialOfficetel: true }), rules);
+  assert.equal(r.rti.threshold, 1.25);
+  assert.equal(r.ltv.ratio, 0.70);
+  assert.equal(calcLoanLimit(biz({ use: "오피스텔" }), rules).rti.threshold, 1.5);
+});
+
+test("투자 분석: 분할상환이면 연 원금 상환액 계산, 만기일시면 0", () => {
+  const amort = investment({ ...auctionBiz(), repayment: "amortizing", years: 10 }, rules);
+  near(amort.principal, annualPayment(amort.loan, 0.05, 10) - amort.loan * 0.05);
+  assert.equal(investment({ ...auctionBiz(), repayment: "bullet" }, rules).principal, 0);
+});

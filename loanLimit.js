@@ -43,6 +43,14 @@
       const l = ltvRatio(input, location, rules);
       return { ratio: l.ratio, why: `임대사업자 ${l.why}` };
     }
+    // 8.13 대책: 준공 1년 이내 신축 비아파트 최초 매입. 등록임대사업자는 지역 무관 60%, 그 밖에는 규제지역 30%·비규제 60%.
+    if (input.newBuild && !rules.apartmentUses.includes(input.use)) {
+      const N = rules.business.newBuildLtv;
+      if (input.registeredLandlord) return { ratio: N.registered, why: "등록임대사업자 신축 비아파트 최초 매입 (8·13 대책)" };
+      return location === "regulated"
+        ? { ratio: N.regulated, why: "규제지역 신축 비아파트 최초 매입 (8·13 대책)" }
+        : { ratio: N.other, why: "비규제지역 신축 비아파트 최초 매입 (8·13 대책)" };
+    }
     if (location === "local") return { ratio: rules.business.housingLtvLocal, why: "지방 주택 임대·매매사업자" };
     return { ratio: 0, why: `${LOCATION_NAMES[location]} 주택 임대·매매사업자 (주택담보대출 금지)` };
   }
@@ -52,7 +60,7 @@
   function rtiLimit(input, rules) {
     const B = rules.business;
     const housing = rules.housingUses.includes(input.use);
-    const threshold = housing ? B.rti.housing : B.rti.nonHousing;
+    const threshold = housing || input.residentialOfficetel ? B.rti.housing : B.rti.nonHousing;
     const depositYield = input.depositYield ?? B.depositYield;
     const income = (input.monthlyRent || 0) * 12 + (input.rentDeposit || 0) * depositYield;
     const stress = input.rateType === "fixed" ? 0 : Math.max(B.rtiStressMin, input.rtiStress ?? 0);
@@ -148,6 +156,7 @@
    *   depositTier, houseUnits, shopUnits, seniorDebt(선순위 채권최고액, 경매면 인수할 금액),
    *   borrower('personal'|'business'), deal('market'|'auction'),
    *   경매: price=감정가, bid(낙찰가, 0이면 감정가 × 낙찰가율로 예상), bidRatio(낙찰가 인정 비율, 없으면 금융권별 기본값),
+   *   newBuild/registeredLandlord(8·13 신축 비아파트 예외), residentialOfficetel(주거용 오피스텔 → RTI 1.25배),
    *   임대사업자: monthlyRent, rentDeposit, depositYield, existingBuildingInterest(해당 건물 기존 대출 연 이자),
    *     rtiStress(변동금리 스트레스, 최소값보다 작으면 최소값) }
    */
@@ -225,7 +234,7 @@
 
     // 4) 대출 불가·경고
     if (policy) { blocks.push(...policy.blocks); warnings.push(...policy.warnings); }
-    if (business && housing && location !== "local" && input.ltvOverride == null)
+    if (business && housing && ltv.ratio === 0 && input.ltvOverride == null)
       blocks.push(`${LOCATION_NAMES[location]}에서는 주택 매매·임대사업자의 주택담보대출이 금지됩니다 (2025.9.7 가계부채 보강안, LTV 0%). ` +
         "예외로 준공 1년 이내 신축 비아파트를 처음 사면 규제지역 30%·비규제 60%, 등록임대사업자는 60%까지 됩니다(2026.8.13 대책). 해당하면 'LTV 직접 입력'에 넣으세요.");
     if (business) {
@@ -333,6 +342,7 @@
       const opex = (opts.monthlyOpex || 0) * 12;
       const net = rentYear - interest - opex;
       return { price, loan, limit: r.finalLimit, tax, taxRate, total, deposit, equity, rentYear, interest, opex, net,
+        principal: inp.repayment === "amortizing" && inp.years > 0 ? Math.max(0, annualPayment(loan, inp.rate, inp.years) - interest) : 0,
         monthly: net / 12, grossYield: price - deposit > 0 ? rentYear / (price - deposit) : null,
         equityYield: equity > 0 ? net / equity : null };
     };

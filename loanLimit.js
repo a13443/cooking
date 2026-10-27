@@ -20,7 +20,9 @@
 
   function ltvRatio(input, location, rules) {
     const L = rules.ltv;
-    if (!rules.housingUses.includes(input.use)) return { ratio: L.nonHousing, why: "비주택 담보" };
+    if (!rules.housingUses.includes(input.use)) return input.permitZone
+      ? { ratio: L.nonHousingPermitZone, why: "토지거래허가구역(비주택 포함 지정) 비주택 담보" }
+      : { ratio: L.nonHousing, why: "비주택 담보" };
     const first = input.firstTimeBuyer && input.homes === "noHome" && input.purpose === "purchase";
     const name = LOCATION_NAMES[location];
     if (location === "local") {
@@ -82,6 +84,17 @@
     return monthly * 12;
   }
 
+  // DSR 계산용 연 원리금. 만기일시상환은 원금 ÷ 간주 만기 + 연 이자, 그 밖에는 원리금균등.
+  function dsrAnnualPayment(principal, input, stress, rules) {
+    if (input.repayment === "bullet") return principal / rules.bulletDsrAssumedYears + principal * (input.rate + stress);
+    return annualPayment(principal, input.rate + stress, input.years);
+  }
+  function dsrPrincipal(room, input, stress, rules) {
+    if (room <= 0) return 0;
+    if (input.repayment === "bullet") return room / (1 / rules.bulletDsrAssumedYears + input.rate + stress);
+    return principalFromAnnual(room, input.rate + stress, input.years);
+  }
+
   // 연 상환 여력으로 빌릴 수 있는 원금 (annualPayment의 역함수)
   function principalFromAnnual(annual, annualRate, years) {
     const n = years * 12, r = annualRate / 12, monthly = annual / 12;
@@ -137,12 +150,19 @@
     let dsr;
     if ((input.policyMortgage || policy) && rules.policyMortgageExcludedFromDSR) {
       dsr = { limit: null, excluded: true, why: "정책모기지는 DSR 계산 제외" };
-    } else if (!input.annualIncome) {
+    } else if (!input.annualIncome && !input.dsrExempt) {
       dsr = { limit: null, excluded: true, why: "연소득을 입력하면 DSR 한도를 계산합니다" };
     } else {
-      const room = dsrRatio * input.annualIncome - existing;
-      dsr = { limit: principalFromAnnual(room, input.rate + stress, input.years), excluded: false,
-        why: `DSR ${dsrRatio * 100}% · 금리 ${(input.rate * 100).toFixed(2)}% + 스트레스 ${(stress * 100).toFixed(2)}%` };
+      const repay = input.repayment === "bullet" ? ` · 만기일시(원금 ÷ ${rules.bulletDsrAssumedYears}년)` : "";
+      const byDsr = input.annualIncome ? dsrPrincipal(dsrRatio * input.annualIncome - existing, input, stress, rules) : 0;
+      dsr = { limit: byDsr, excluded: false,
+        why: `DSR ${dsrRatio * 100}% · 금리 ${(input.rate * 100).toFixed(2)}% + 스트레스 ${(stress * 100).toFixed(2)}%${repay}` };
+      // 가계대출 총액이 기준 이하면 DSR이 적용되지 않으므로, 기준까지 남은 금액과 DSR 한도 중 큰 값
+      if (input.dsrExempt) {
+        const exemptRoom = Math.max(0, rules.dsrTotalLoanThreshold - (input.existingLoanBalance || 0));
+        if (exemptRoom > byDsr) dsr = { limit: exemptRoom, excluded: false, exempt: true,
+          why: `가계대출 총액 ${rules.dsrTotalLoanThreshold / 1e8}억 이하라 DSR 미적용 (기존 잔액 제외 ${Math.round(exemptRoom / 1e4).toLocaleString("ko-KR")}만원까지)` };
+      }
     }
 
     // 4) 대출 불가·경고
@@ -189,7 +209,7 @@
     const tips = [];
     const ceiling = Math.min(r.collateralLimit, r.cap ? r.cap.cap : Infinity); // DSR을 빼고 남는 한도
     if (ceiling > r.finalLimit && input.years > 0) {
-      const need = (annualPayment(ceiling, input.rate + r.dsr.stress, input.years) + r.dsr.existingAnnual) / r.dsr.ratio;
+      const need = (dsrAnnualPayment(ceiling, input, r.dsr.stress, rules) + r.dsr.existingAnnual) / r.dsr.ratio;
       tips.push({ key: "income", value: Math.ceil(need / 1e4) * 1e4, amount: ceiling });
     }
     const alt = (key, value, over) => {
@@ -203,6 +223,6 @@
     return tips;
   }
 
-  return { classifyLocation, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, calcLoanLimit, suggestions,
+  return { classifyLocation, ltvRatio, amountCap, stressRate, annualPayment, principalFromAnnual, dsrAnnualPayment, calcLoanLimit, suggestions,
     LOCATION_NAMES, HOMES_NAMES, PURPOSE_NAMES };
 });

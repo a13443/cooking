@@ -303,3 +303,34 @@ test("비주택 담보대출에는 신용대출 1억 초과 주택구입 제한 
   const r = calcLoanLimit(input({ region: "서울", use: "대지", price: 5e8, creditLoanTotal: 1.5e8, depositTier: "seoul" }), rules);
   assert.ok(!r.warnings.some((m) => m.includes("신용대출")));
 });
+
+test("만기일시상환(비주택): DSR 연 원리금 = 원금 ÷ 8년 + 연 이자", () => {
+  // 연소득 5천만 × 40% = 2천만, 금리 4% + 스트레스 1.5% → 2천만 ÷ (1/8 + 0.055) = 1억 1,111만
+  const r = calcLoanLimit(input({ region: "부산", use: "임야", price: 10e8, auctionRate: 0.9, annualIncome: 5e7,
+    repayment: "bullet", years: 2, depositTier: "metro" }), rules);
+  near(r.dsr.limit, 2e7 / (1 / 8 + 0.055));
+  assert.equal(r.binding, "dsr");
+  // 만기(2년·10년)는 일시상환 DSR에 영향 없음
+  const r10 = calcLoanLimit(input({ region: "부산", use: "임야", price: 10e8, auctionRate: 0.9, annualIncome: 5e7,
+    repayment: "bullet", years: 10, depositTier: "metro" }), rules);
+  near(r10.dsr.limit, r.dsr.limit);
+});
+
+test("가계대출 총액 1억 이하 체크: DSR 한도보다 1억 − 기존 잔액이 크면 그 금액까지", () => {
+  const base = { region: "부산", use: "임야", price: 3e8, depositTier: "metro", annualIncome: 1e7, dsrExempt: true, existingLoanBalance: 3e7 }; // DSR만으로는 약 5,870만원
+  const r = calcLoanLimit(input(base), rules);
+  assert.equal(r.dsr.exempt, true);
+  assert.equal(r.dsr.limit, 7e7);
+  // 소득이 없어도 1억 이내는 가능
+  const noIncome = calcLoanLimit(input({ ...base, annualIncome: 0 }), rules);
+  assert.equal(noIncome.dsr.limit, 7e7);
+  // DSR 한도가 더 크면 DSR 한도
+  const rich = calcLoanLimit(input({ ...base, annualIncome: 2e8 }), rules);
+  assert.ok(!rich.dsr.exempt && rich.dsr.limit > 7e7);
+});
+
+test("비주택 포함 토지거래허가구역 체크: 비주택 LTV 40%", () => {
+  const r = calcLoanLimit(input({ region: "서울", use: "대지", price: 5e8, permitZone: true, depositTier: "seoul" }), rules);
+  assert.equal(r.ltv.ratio, 0.40);
+  assert.equal(r.collateralLimit, 2e8);
+});

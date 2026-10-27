@@ -313,6 +313,10 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
           </div>
         </div>
         <label class="check" id="first-time-label" for="first-time"><input type="checkbox" id="first-time"> 생애최초 주택 구입</label>
+        <div class="field" id="permit-field" hidden>
+          <label class="check" for="permit-zone"><input type="checkbox" id="permit-zone"> 토지거래허가구역 안 (비주택까지 포함해 지정된 곳)</label>
+          <span class="hint" id="permit-hint"></span>
+        </div>
         <div class="rate-box">
           <div class="rate-top">
             <span class="rate-big" id="ltv-auto">–</span>
@@ -361,6 +365,20 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
             <label for="years">만기 (년)</label>
             <input id="years" type="number" min="1" max="50" step="1">
           </div>
+        </div>
+        <div class="field" id="repayment-field" hidden>
+          <label for="repayment">상환 방식</label>
+          <select id="repayment">
+            <option value="amortizing">분할상환 (원리금균등)</option>
+            <option value="bullet">만기일시상환</option>
+          </select>
+          <span class="hint" id="repayment-hint"></span>
+        </div>
+        <label class="check" for="dsr-exempt"><input type="checkbox" id="dsr-exempt"> 가계대출 총액(기존 잔액 + 이번 대출)이 1억원 이하</label>
+        <div class="field" id="balance-field" hidden>
+          <label for="loan-balance">기존 가계대출 잔액 (원)</label>
+          <input id="loan-balance" class="money" type="text" inputmode="numeric" autocomplete="off">
+          <span class="hint" id="dsr-exempt-hint"></span>
         </div>
         <div class="row" id="policy-row">
           <div class="field">
@@ -582,6 +600,9 @@ function render() {
   ["location-field", "purpose-field", "first-time-label", "policy-row"].forEach((id) => { $(id).hidden = !isHousing; });
   $("homes-field").hidden = !isHousing && !$("jeonse").checked;
   $("homes-hint").hidden = isHousing;
+  $("permit-field").hidden = isHousing;
+  $("repayment-field").hidden = isHousing;
+  $("balance-field").hidden = !$("dsr-exempt").checked;
   const homes = $("homes").value;
   $("first-time").disabled = homes !== "noHome";
   const policyOn = isHousing && $("policy-product").value !== "";
@@ -600,6 +621,9 @@ function render() {
     jeonse: { has: $("jeonse").checked, inCapitalOrRegulated: $("jeonse-capital").checked,
       policy: $("jeonse-policy").checked, annualInterest: parseMoney($("jeonse-interest").value) },
     depositTier: tier.id, houseUnits: hu, shopUnits: su,
+    permitZone: !isHousing && $("permit-zone").checked,
+    repayment: isHousing ? "amortizing" : $("repayment").value,
+    dsrExempt: $("dsr-exempt").checked, existingLoanBalance: parseMoney($("loan-balance").value),
   };
   const r = LoanLimit.calcLoanLimit(loanInput, RULES);
 
@@ -640,9 +664,12 @@ function render() {
   $("l-total").textContent = fmt(r.finalLimit);
   $("l-total-kor").textContent = r.binding === "blocked" ? "대출 불가" : korMoney(r.finalLimit);
   const years = loanInput.years;
-  $("monthly").textContent = r.finalLimit > 0 && years > 0
-    ? `이 금액을 빌리면 월 상환액 약 ${fmt(LoanLimit.annualPayment(r.finalLimit, loanInput.rate, years) / 12)}원 (금리 ${(loanInput.rate * 100).toFixed(2)}%, ${years}년 원리금균등, 스트레스 금리 제외)`
-    : "";
+  $("monthly").textContent = r.finalLimit <= 0 ? ""
+    : loanInput.repayment === "bullet"
+      ? `이 금액을 빌리면 월 이자 약 ${fmt(r.finalLimit * loanInput.rate / 12)}원, 만기(${years}년)에 원금 일시상환 (금리 ${(loanInput.rate * 100).toFixed(2)}%, 스트레스 금리 제외)`
+      : years > 0
+        ? `이 금액을 빌리면 월 상환액 약 ${fmt(LoanLimit.annualPayment(r.finalLimit, loanInput.rate, years) / 12)}원 (금리 ${(loanInput.rate * 100).toFixed(2)}%, ${years}년 원리금균등, 스트레스 금리 제외)`
+        : "";
   saveState();
   $("msgs").innerHTML = [...r.blocks.map((m) => `<li class="block">${m}</li>`), ...r.warnings.map((m) => `<li class="warn">${m}</li>`)].join("");
 
@@ -859,6 +886,8 @@ function applyPreset(p) {
   $("policy-product").value = ""; $("household").value = "general";
   $("credit").value = "";
   $("jeonse").checked = false; $("jeonse-fields").hidden = true;
+  $("permit-zone").checked = false; $("repayment").value = "amortizing";
+  $("dsr-exempt").checked = false; $("loan-balance").value = "";
   render();
 }
 
@@ -866,6 +895,10 @@ function init() {
   fill($("region"), RATES.regions.map((r) => [r, r]));
   fill($("use"), RATES.uses.map((u) => [u, u]));
   fill($("tier"), TIERS.map((t) => [t.id, t.name]));
+  $("permit-hint").textContent = "체크하면 비주택 LTV가 70%에서 40%로 줄어듭니다. 10·15 대책으로 새로 지정된 서울 전역·경기 12곳은 아파트만 대상이라 해당하지 않습니다. 예: " +
+    RULES.nonHousingPermitZoneExamples.join(" / ");
+  $("repayment-hint").textContent = `만기일시상환은 DSR을 '원금 ÷ ${RULES.bulletDsrAssumedYears}년 + 연 이자'로 계산합니다(현행 기준). 이때 입력한 만기는 DSR에 영향을 주지 않습니다.`;
+  $("dsr-exempt-hint").textContent = `차주단위 DSR은 가계대출 총액이 ${RULES.dsrTotalLoanThreshold / 1e8}억원을 넘을 때 적용됩니다. 1억에서 기존 잔액을 뺀 금액까지는 DSR 없이 빌릴 수 있습니다.`;
   $("disclaimer").textContent = `본 결과는 참고용이며 실제 한도는 금융기관 심사 및 최신 금융위원회 규정에 따라 달라질 수 있습니다. (규정 기준일: ${RULES.effectiveDate})`;
   $("src-period").textContent = RATES.periods["5y"];
   $("src-min").textContent = RATES.minSold;
@@ -887,6 +920,13 @@ function init() {
     e.target.value = n ? fmt(n) : "";
     render();
   }));
+  ["permit-zone", "repayment"].forEach((id) => $(id).addEventListener("change", render));
+  $("dsr-exempt").addEventListener("change", render);
+  $("loan-balance").addEventListener("input", (e) => {
+    const n = parseMoney(e.target.value);
+    e.target.value = n ? fmt(n) : "";
+    render();
+  });
   $("jeonse").addEventListener("change", (e) => { $("jeonse-fields").hidden = !e.target.checked; render(); });
   $("ltv-override").addEventListener("change", (e) => {
     $("ltv-field").hidden = !e.target.checked;

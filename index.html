@@ -86,6 +86,21 @@ select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px s
 .check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.box-title { font-size: 13px; font-weight: 600; }
+.combo { position: relative; }
+.combo-wrap { position: relative; }
+.combo-wrap input { padding-right: 40px; }
+.combo-btn { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 38px; border: 0; border-radius: 0 6px 6px 0; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
+.combo-list { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 4px 0; list-style: none; max-height: 280px; overflow-y: auto;
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgb(0 0 0 / .12); }
+.combo-list li { padding: 7px 12px; font-size: 14px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+.combo-list li small { color: var(--muted); white-space: nowrap; }
+.combo-list li.active, .combo-list li:hover { background: var(--accent-soft); }
+.combo-list li.sel { font-weight: 600; color: var(--accent); }
+.combo-list li.more { color: var(--muted); font-size: 12px; cursor: default; background: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { font: inherit; font-size: 12px; font-family: var(--font-num); color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.chips button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 button.preset {
   font: inherit; font-size: 13px; color: var(--accent); background: transparent; cursor: pointer;
   border: 1px solid var(--accent); border-radius: 999px; padding: 5px 12px;
@@ -104,6 +119,7 @@ button.preset:hover { background: var(--accent-soft); }
 .ledger .sub { display: block; font-size: 12px; color: var(--muted); }
 .ledger tr.total td { border-bottom: 0; border-top: 2px solid var(--ink); padding-top: 14px; }
 .total-label { font-weight: 600; }
+.final .sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
 .total-amt { font-size: 24px; font-weight: 500; color: var(--accent); }
 .won { display: block; font-family: var(--font-body); font-size: 12px; color: var(--muted); }
 .note { font-size: 12px; color: var(--muted); margin: 0; }
@@ -205,34 +221,40 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
             <select id="use"></select>
           </div>
         </div>
-        <div class="field">
-          <label for="price">추정 시세 (원)</label>
-          <input id="price" class="money" type="text" inputmode="numeric" autocomplete="off">
-          <span class="hint" id="price-kor"></span>
-          <span class="hint">공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다.</span>
-        </div>
         <div class="rate-box" id="trade-box" hidden>
-          <span class="hint" id="trade-meta"></span>
-          <div class="row">
-            <div class="field">
-              <label for="trade-sgg">시·군·구</label>
-              <select id="trade-sgg"></select>
-            </div>
-            <div class="field">
-              <label for="trade-area">전용면적</label>
-              <select id="trade-area"></select>
-            </div>
+          <div class="rate-top">
+            <span class="box-title">실거래가로 시세 찾기</span>
+            <span class="hint" id="trade-meta"></span>
           </div>
           <div class="field">
+            <label for="trade-sgg">시·군·구</label>
+            <select id="trade-sgg"></select>
+          </div>
+          <div class="field combo">
             <label for="trade-apt">단지명</label>
-            <input id="trade-apt" type="text" list="trade-apt-list" autocomplete="off" placeholder="단지명 일부를 입력해 고르세요">
-            <datalist id="trade-apt-list"></datalist>
+            <div class="combo-wrap">
+              <input id="trade-apt" type="text" role="combobox" aria-expanded="false" aria-controls="trade-apt-list" aria-autocomplete="list" autocomplete="off" placeholder="눌러서 목록 보기 · 단지명 일부를 입력해 검색">
+              <button type="button" class="combo-btn" id="trade-apt-btn" tabindex="-1" aria-label="단지 목록 열기">▾</button>
+            </div>
+            <ul class="combo-list" id="trade-apt-list" role="listbox" hidden></ul>
+          </div>
+          <div class="field">
+            <label for="trade-area">전용면적 (㎡)</label>
+            <input id="trade-area" type="number" min="1" step="0.01" inputmode="decimal" placeholder="예: 84">
+            <div class="chips" id="trade-area-chips"></div>
+            <span class="hint" id="trade-area-hint"></span>
           </div>
           <span class="hint" id="trade-sum"></span>
           <div class="presets">
             <button type="button" class="preset" id="trade-median" disabled>중위가를 시세로</button>
             <button type="button" class="preset" id="trade-last" disabled>최근 거래가를 시세로</button>
           </div>
+        </div>
+        <div class="field">
+          <label for="price">추정 시세 (원)</label>
+          <input id="price" class="money" type="text" inputmode="numeric" autocomplete="off">
+          <span class="hint" id="price-kor"></span>
+          <span class="hint" id="price-hint">공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다.</span>
         </div>
         <div class="field">
           <label for="senior">선순위 채권 (원)</label>
@@ -417,7 +439,7 @@ section h2.sec { font-family: var(--font-display); font-size: 20px; margin: 0; }
         <div class="limit" id="lim-dsr"><span class="k">DSR 한도</span><span class="v" id="lim-dsr-v"></span><span class="d" id="lim-dsr-d"></span></div>
       </div>
       <div class="final">
-        <span class="total-label">예상 대출가능금액 = min(세 한도)</span>
+        <span class="total-label">예상 대출가능금액<span class="sub">위 세 가지 한도(담보 기준 한도, 가격 구간·목적 상한, DSR 한도) 중 가장 작은 금액</span></span>
         <span><span class="total-amt" id="l-total"></span><span class="won" id="l-total-kor"></span></span>
       </div>
       <p class="hint" id="monthly"></p>
@@ -643,37 +665,114 @@ function fillKeep(select, items) {
   fill(select, items);
   if (items.some(([v]) => v === keep)) select.value = keep;
 }
+const AREA_TOLERANCE = 3; // 면적을 먼저 넣었을 때 이 범위(㎡) 안에서 거래된 단지만 목록에 보여준다
+const COMBO_LIMIT = 300;
+const norm = (t) => String(t).replace(/\s+/g, "").toLowerCase();
+function tradeRegion() {
+  const T = window.TRADES;
+  return T && T.regions[$("trade-sgg").value];
+}
+function selectedComplex() {
+  const reg = tradeRegion();
+  return reg && reg.complexes[$("trade-apt").value] ? $("trade-apt").value : null;
+}
+// 입력한 면적과 가장 가까운 거래 면적. 비어 있으면 거래가 가장 많은 면적.
+function pickArea(cx) {
+  const keys = Object.keys(cx);
+  const want = Number($("trade-area").value);
+  if (!want) return keys.reduce((a, b) => (cx[b].n > cx[a].n ? b : a));
+  return keys.reduce((a, b) => (Math.abs(b - want) < Math.abs(a - want) ? b : a));
+}
+function hasAreaNear(cx, want) {
+  return Object.keys(cx).some((a) => Math.abs(a - want) <= AREA_TOLERANCE);
+}
+
 function renderTradeBox() {
   const T = window.TRADES;
   const list = T ? Object.entries(T.regions).filter(([, r]) => r.sido === $("region").value) : [];
   $("trade-box").hidden = !(list.length && $("use").value === "아파트");
+  $("price-hint").textContent = $("trade-box").hidden
+    ? "공시가, 최근 거래가, 주변 거래가를 참고해 직접 입력합니다."
+    : "위 실거래가 버튼으로 채우거나 직접 입력합니다.";
   if ($("trade-box").hidden) return;
-  $("trade-meta").textContent = `실거래가로 채우기 · ${T.period} · ${T.source} · ${T.updated} 갱신`;
+  $("trade-meta").textContent = `${T.period} · ${T.updated} 갱신`;
   const sgg = $("trade-sgg");
   const sggKey = list.map(([c]) => c).join();
   if (sgg.dataset.k !== sggKey) { fillKeep(sgg, list.map(([c, r]) => [c, `${r.name} (${r.count.toLocaleString("ko-KR")}건)`])); sgg.dataset.k = sggKey; }
   if (!list.some(([c]) => c === sgg.value)) sgg.value = list[0][0];
   const reg = T.regions[sgg.value];
-  if ($("trade-apt-list").dataset.k !== sgg.value) {
-    $("trade-apt-list").innerHTML = Object.keys(reg.complexes).map((k) => `<option value="${esc(k)}">`).join("");
-    $("trade-apt-list").dataset.k = sgg.value;
-  }
-  const cx = reg.complexes[$("trade-apt").value];
-  const area = $("trade-area");
-  if (!cx) {
-    fill(area, []);
-    $("trade-sum").textContent = $("trade-apt").value ? "목록에 있는 단지를 고르세요." : "";
+  if (!$("trade-apt-list").hidden) renderComboList();
+
+  const name = selectedComplex();
+  const want = Number($("trade-area").value);
+  const chips = $("trade-area-chips");
+  if (!name) {
+    chips.innerHTML = "";
+    const n = want ? Object.values(reg.complexes).filter((cx) => hasAreaNear(cx, want)).length : 0;
+    $("trade-area-hint").textContent = want
+      ? `전용 ${want}㎡ 전후(±${AREA_TOLERANCE}㎡) 거래가 있는 단지 ${n.toLocaleString("ko-KR")}곳만 단지 목록에 보여줍니다.`
+      : "단지를 고르면 그 단지에서 거래된 면적이 나옵니다. 면적을 먼저 넣으면 그 면적이 거래된 단지만 목록에 보여줍니다.";
+    $("trade-sum").textContent = $("trade-apt").value ? "목록에서 단지를 고르세요." : "";
     $("trade-median").disabled = $("trade-last").disabled = true;
     return;
   }
-  fillKeep(area, Object.keys(cx).map((a) => [a, `${a}㎡ (${cx[a].n}건)`]));
-  const s = cx[area.value];
-  $("trade-sum").textContent = `${s.n}건 · 중위 ${korMoney(s.median)} · 최근 ${s.last.date} ${korMoney(s.last.price)} (${s.last.floor}층)`;
+  const cx = reg.complexes[name];
+  const area = pickArea(cx);
+  chips.innerHTML = Object.keys(cx).map((a) =>
+    `<button type="button" data-area="${a}" class="${a === area ? "on" : ""}">${a}㎡ · ${cx[a].n}건</button>`).join("");
+  $("trade-area-hint").textContent = !want ? `거래가 가장 많은 ${area}㎡ 기준입니다. 다른 면적을 누르거나 직접 입력하세요.`
+    : Number(area) === want ? "" : `입력한 ${want}㎡와 가장 가까운 거래 면적 ${area}㎡ 기준입니다.`;
+  const st = cx[area];
+  $("trade-sum").textContent = `${area}㎡ · ${st.n}건 · 중위 ${korMoney(st.median)} · 최근 ${st.last.date} ${korMoney(st.last.price)} (${st.last.floor}층)`;
   $("trade-median").disabled = $("trade-last").disabled = false;
 }
+
+// 단지명 콤보박스: 누르면 전체 목록, 입력하면 이름에 들어간 단지만. 단지를 고른 뒤 다시 열어도 전체가 보인다.
+let comboActive = -1;
+function comboItems() {
+  const reg = tradeRegion();
+  if (!reg) return [];
+  const q = $("trade-apt").value;
+  const want = Number($("trade-area").value);
+  let names = Object.keys(reg.complexes);
+  if (!selectedComplex() && q.trim()) names = names.filter((k) => norm(k).includes(norm(q)));
+  if (want) names = names.filter((k) => hasAreaNear(reg.complexes[k], want));
+  return names;
+}
+function renderComboList() {
+  const reg = tradeRegion();
+  const names = comboItems();
+  const sel = selectedComplex();
+  const shown = names.slice(0, COMBO_LIMIT);
+  const count = (k) => Object.values(reg.complexes[k]).reduce((s, a) => s + a.n, 0);
+  $("trade-apt-list").innerHTML = shown.length
+    ? shown.map((k, i) => `<li role="option" id="apt-opt-${i}" data-name="${esc(k)}" class="${k === sel ? "sel" : ""}${i === comboActive ? " active" : ""}">${esc(k)}<small>${count(k)}건</small></li>`).join("") +
+      (names.length > shown.length ? `<li class="more">외 ${(names.length - shown.length).toLocaleString("ko-KR")}곳 · 이름을 더 입력하세요</li>` : "")
+    : `<li class="more">맞는 단지가 없습니다</li>`;
+  $("trade-apt").setAttribute("aria-activedescendant", comboActive >= 0 ? `apt-opt-${comboActive}` : "");
+}
+function openCombo() {
+  comboActive = -1;
+  $("trade-apt-list").hidden = false;
+  $("trade-apt").setAttribute("aria-expanded", "true");
+  renderComboList();
+  const sel = $("trade-apt-list").querySelector("li.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+function closeCombo() {
+  $("trade-apt-list").hidden = true;
+  $("trade-apt").setAttribute("aria-expanded", "false");
+}
+function chooseComplex(name) {
+  $("trade-apt").value = name;
+  closeCombo();
+  renderTradeBox();
+  saveState();
+}
 function useTradePrice(kind) {
-  const s = window.TRADES.regions[$("trade-sgg").value].complexes[$("trade-apt").value][$("trade-area").value];
-  $("price").value = fmt(kind === "median" ? s.median : s.last.price);
+  const cx = tradeRegion().complexes[selectedComplex()];
+  const st = cx[pickArea(cx)];
+  $("price").value = fmt(kind === "median" ? st.median : st.last.price);
   render();
 }
 
@@ -817,8 +916,42 @@ function init() {
   });
   $("print").addEventListener("click", () => window.print());
   $("trade-sgg").addEventListener("change", () => { $("trade-apt").value = ""; renderTradeBox(); saveState(); });
-  $("trade-apt").addEventListener("input", () => { renderTradeBox(); saveState(); });
-  $("trade-area").addEventListener("change", () => { renderTradeBox(); saveState(); });
+  const apt = $("trade-apt");
+  apt.addEventListener("focus", openCombo);
+  apt.addEventListener("click", () => { if ($("trade-apt-list").hidden) openCombo(); });
+  apt.addEventListener("input", () => { comboActive = -1; $("trade-apt-list").hidden ? openCombo() : renderComboList(); renderTradeBox(); saveState(); });
+  apt.addEventListener("blur", closeCombo);
+  apt.addEventListener("keydown", (e) => {
+    const n = Math.min(comboItems().length, COMBO_LIMIT);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if ($("trade-apt-list").hidden) openCombo();
+      comboActive = n ? (comboActive + (e.key === "ArrowDown" ? 1 : n - 1)) % n : -1;
+      renderComboList();
+      const li = $("apt-opt-" + comboActive);
+      if (li) li.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" && !$("trade-apt-list").hidden && comboActive >= 0) {
+      e.preventDefault();
+      chooseComplex(comboItems()[comboActive]);
+    } else if (e.key === "Escape") closeCombo();
+  });
+  // mousedown에서 막아야 입력칸 blur로 목록이 닫히기 전에 고를 수 있다
+  $("trade-apt-list").addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const li = e.target.closest("li[data-name]");
+    if (li) chooseComplex(li.dataset.name);
+  });
+  $("trade-apt-btn").addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    if ($("trade-apt-list").hidden) { apt.focus(); openCombo(); } else closeCombo();
+  });
+  $("trade-area").addEventListener("input", () => { renderTradeBox(); saveState(); });
+  $("trade-area-chips").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-area]");
+    if (!b) return;
+    $("trade-area").value = b.dataset.area;
+    renderTradeBox(); saveState();
+  });
   $("trade-median").addEventListener("click", () => useTradePrice("median"));
   $("trade-last").addEventListener("click", () => useTradePrice("last"));
 

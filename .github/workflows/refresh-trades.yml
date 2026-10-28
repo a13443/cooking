@@ -1,0 +1,64 @@
+# 매월 아파트 실거래가(data/trades.js)를 다시 받아 바뀐 경우에만 main에 커밋한다.
+# 저장소 Settings → Secrets and variables → Actions 에 DATA_GO_KR_KEY(공공데이터포털 일반 인증키, Decoding)를 등록해야 동작한다.
+# Actions 탭에서 'Run workflow'로 바로 돌려 볼 수도 있다.
+name: 실거래가 갱신
+
+on:
+  schedule:
+    - cron: "0 18 14 * *" # 매월 15일 03:00 (KST). 신고 기한(30일)이 지나 지난달 거래가 어느 정도 쌓인 뒤
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-trades
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 인증키 확인
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: |
+          if [ -z "$DATA_GO_KR_KEY" ]; then
+            echo "::error::저장소 Secrets에 DATA_GO_KR_KEY가 없습니다."
+            exit 1
+          fi
+
+      # 한 지역이라도 실패하면 스크립트가 파일을 쓰지 않고 끝나므로 반쪽짜리 데이터가 커밋되지 않는다.
+      - name: 실거래가 받기
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python scripts/fetch_trades.py 서울 경기규제 제주
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 테스트
+        run: npm test
+
+      - name: 바뀐 경우 커밋
+        run: |
+          if git diff --quiet -- data/trades.js; then
+            echo "바뀐 내용 없음"
+            exit 0
+          fi
+          period=$(grep -o '"period":"[^"]*"' data/trades.js | head -1 | cut -d'"' -f4)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/trades.js
+          git commit -m "실거래가 자동 갱신 (${period})"
+          git push

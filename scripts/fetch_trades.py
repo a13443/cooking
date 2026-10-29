@@ -102,14 +102,21 @@ def parse_items(xml_text):
     return rows, total
 
 
+RETRY_WAITS = (5, 15, 30)  # 공공데이터포털이 가끔 접속 시간 초과를 내므로 기다렸다가 다시 시도한다
+
+
 def get(url):
-    try:
-        with urllib.request.urlopen(url, timeout=30) as r:
-            return r.read().decode("utf-8")
-    except (ssl.SSLError, urllib.error.URLError) as e:
-        if url.startswith("https://") and "SSL" in str(e):
-            return get("http://" + url[len("https://"):])  # 일부 환경은 https 인증서 오류가 난다
-        raise
+    for wait in (*RETRY_WAITS, None):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                return r.read().decode("utf-8")
+        except (ssl.SSLError, urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if url.startswith("https://") and "SSL" in str(e):
+                return get("http://" + url[len("https://"):])  # 일부 환경은 https 인증서 오류가 난다
+            if wait is None:
+                raise
+            print(f"  접속 실패({e}), {wait}초 뒤 다시 시도", file=sys.stderr)
+            time.sleep(wait)
 
 
 def fetch_month(key, lawd, ymd):

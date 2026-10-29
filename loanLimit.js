@@ -256,6 +256,8 @@
         input.price > rules.jeonseLoanBlockApartmentPrice && input.jeonse && input.jeonse.has)
         blocks.push(`전세대출을 보유한 채 규제지역 ${rules.jeonseLoanBlockApartmentPrice / 1e8}억 초과 아파트를 구입하는 대출은 불가합니다.`);
     }
+    if (!business && housing && input.years > rules.maxLoanYears[location])
+      warnings.push(`${LOCATION_NAMES[location]} 주택담보대출 만기는 ${rules.maxLoanYears[location]}년 이내로 제한됩니다 (2025.6.27 대책).`);
     if (!business && housing && (input.creditLoanTotal || 0) > rules.creditLoanWarnThreshold)
       warnings.push(`신용대출이 ${rules.creditLoanWarnThreshold / 1e8}억을 넘으면 신용대출 실행일부터 1년간 규제지역 주택 구입이 제한됩니다.`);
     if (jeonseInDsr) warnings.push(`1주택자의 수도권·규제지역 전세대출 이자(연 ${Math.round(input.jeonse.annualInterest || 0).toLocaleString("ko-KR")}원)를 DSR에 포함했습니다.`);
@@ -299,7 +301,8 @@
       const amount = calcLoanLimit({ ...input, ...over }, rules).finalLimit;
       if (amount > r.finalLimit + 1) tips.push({ key, value, amount });
     };
-    if (input.years < rules.maxLoanYears) alt("years", rules.maxLoanYears, { years: rules.maxLoanYears });
+    const maxYears = r.housing ? rules.maxLoanYears[r.location] : rules.maxLoanYears.local;
+    if (input.years < maxYears) alt("years", maxYears, { years: maxYears });
     if (r.dsr.stress > 0) alt("fixed", null, { rateType: "fixed" });
     if (input.existingAnnualPayment > 0) alt("repayExisting", null, { existingAnnualPayment: 0 });
     if (input.sector === "bank") alt("nonBank", null, { sector: "nonBank" });

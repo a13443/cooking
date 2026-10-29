@@ -214,7 +214,7 @@ test("선순위 채권이 담보인정액 이상이면 0과 경고", () => {
 });
 
 test("역산: DSR이 결정할 때 필요 소득·만기·고정금리·비은행 제안", () => {
-  const base = input({ annualIncome: 5e7, years: 30 });
+  const base = input({ annualIncome: 5e7, years: 20 });
   const before = calcLoanLimit(base, rules).finalLimit;
   const tips = suggestions(base, rules);
   const by = Object.fromEntries(tips.map((t) => [t.key, t]));
@@ -223,7 +223,17 @@ test("역산: DSR이 결정할 때 필요 소득·만기·고정금리·비은�
   assert.equal(by.income.amount, 5.6e8);
   assert.equal(calcLoanLimit({ ...base, annualIncome: by.income.value }, rules).finalLimit, 5.6e8);
   for (const k of ["years", "fixed", "nonBank"]) assert.ok(by[k].amount > before, k);
-  assert.equal(by.years.value, rules.maxLoanYears);
+  assert.equal(by.years.value, 30); // 수도권·규제지역 주담대 만기 30년 제한 (6.27 대책)
+});
+
+test("만기: 수도권은 30년까지만 제안·초과 시 경고, 지방은 40년 제안", () => {
+  const seoul = input({ annualIncome: 5e7, years: 30 });
+  assert.ok(!suggestions(seoul, rules).some((t) => t.key === "years"));
+  assert.ok(calcLoanLimit({ ...seoul, years: 40 }, rules).warnings.some((w) => w.includes("30년 이내")));
+  const jeju = input({ region: "제주", district: "제주시", price: 5e8, annualIncome: 3e7, years: 30 });
+  const tip = suggestions(jeju, rules).find((t) => t.key === "years");
+  assert.equal(tip.value, 40);
+  assert.ok(!calcLoanLimit({ ...jeju, years: 40 }, rules).warnings.some((w) => w.includes("년 이내")));
 });
 
 test("역산: 기존 대출 상환 제안, DSR이 결정하지 않으면 제안 없음", () => {

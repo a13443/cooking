@@ -40,7 +40,9 @@
         conditional1Home: 0.40,
         oneHome: 0.0,
         multiHome: 0.0,
-        nonPurchase: 0.40, // 생활안정자금·이주비 (확인 필요)
+        // 생활안정자금·이주비. 금액 상한(생활안정 1억·이주비 6억)은 6.27 대책·10.15 FAQ 3-1·3-3에서 확인.
+        // LTV 자체는 용도 구분 없는 감독규정 주담대 LTV(9.7 보강안 규제지역 40%)를 쓴다고 보았다 (용도별 명시 문서 없음).
+        nonPurchase: 0.40,
         firstTimeBuyer: 0.70,
       },
       unregulatedCapital: {
@@ -48,10 +50,10 @@
         conditional1Home: 0.70,
         oneHome: 0.0,
         multiHome: 0.0,
-        nonPurchase: 0.70, // 생활안정자금·이주비 (확인 필요)
+        nonPurchase: 0.70,
         firstTimeBuyer: 0.70,
       },
-      local: { default: 0.70, firstTimeBuyer: 0.80, multiHome: 0.60 }, // 지방 다주택 60% (2차 자료 기준, 확인 필요)
+      local: { default: 0.70, firstTimeBuyer: 0.80, multiHome: 0.60 }, // 지방 다주택 60%: 6.27 대책 보도자료 표(비규제 60% → 수도권만 0%) 확인
       nonHousing: 0.70,
       // 토지거래허가구역 중 비주택까지 포함해 지정된 곳의 비주택담보대출 (금융위 10.15 대책 FAQ).
       // 10.15 대책 신규 지정분(서울 전역·경기 12곳)은 아파트 한정이라 70% 그대로다.
@@ -68,7 +70,9 @@
       regulated: 0.030,
       local: 0.0075,
       unregulatedCapital: 0.030, // 10.15 대책: 수도권·규제지역 주담대 하한 3.0%
-      localStage3: 0.015, // localStage3Applied가 true일 때 지방에 쓸 값 (확인 필요)
+      // 지방 주담대 3단계(1.5%)는 2026.6.18 금융위 행정지도로 2026.12.31까지 유예, 그때까지 2단계 0.75%.
+      // 2027년 1월에 연장 여부를 확인해 localStage3Applied를 바꾼다.
+      localStage3: 0.015,
       nonHousing: 0.015, // 토지·상가 등 주택 외 담보대출 = 3단계 '기타대출' 기본 스트레스 금리 (2025.7.1~, 지역 무관)
     },
     stressRateFlags: { localStage3Applied: false },
@@ -80,10 +84,11 @@
     // 비주택 포함 토지거래허가구역 예시 (화면 안내용, 2026.10 검색 기준. 정확한 범위는 서울부동산정보광장·토지이음에서 확인)
     nonHousingPermitZoneExamples: [
       "서울 25개 구 전역의 지목 '도로' 토지 (2026.10.17~2027.10.16 지정 보도)",
-      "2020년 지정된 국제교류복합지구 인근 잠실·삼성·대치·청담 일대 (2025.2 아파트 291곳 해제, 남은 범위는 확인 필요)",
+      "2020년 지정된 국제교류복합지구 인근 잠실·삼성·대치·청담 일대 (2025.2 아파트 291곳 해제·재건축 14곳 1.36㎢ 유지, 이후 재지정 범위는 확인 필요)",
     ],
 
-    // 정책모기지 상품별 요건과 자체 한도 (2025.6.27 이후 계약분, 2차 자료 기준이라 확인 필요).
+    // 정책모기지 상품별 요건과 자체 한도 (2025.6.28 이후 신청분). 2026.10 주택금융공사(hf.go.kr) 상품 안내로 확인.
+    // 보금자리론은 미성년 자녀 1명 소득 9천만원 구간과 아파트 외 주택 LTV 65%, 규제지역 −10%p(생애최초·실수요자 제외)가 더 있다.
     // 정책대출은 6억/4억/2억 가격 구간 상한 대신 상품 자체 한도를 쓴다. 소득은 부부합산 연소득.
     // household: general(일반) / newlywed(신혼) / multiChild(2자녀 이상)
     policyProducts: {
@@ -100,7 +105,7 @@
         homes: ["noHome", "conditional1Home"],
         maxPrice: { general: 600000000, newlywed: 600000000, multiChild: 600000000 },
         maxIncome: { general: 70000000, firstTimeBuyer: 70000000, newlywed: 85000000, multiChild: 100000000 },
-        cap: { general: 360000000, firstTimeBuyer: 420000000, newlywed: 360000000, multiChild: 360000000 },
+        cap: { general: 360000000, firstTimeBuyer: 420000000, newlywed: 360000000, multiChild: 400000000 },
         ltv: { general: 0.70, firstTimeBuyer: 0.80, firstTimeBuyerCapital: 0.70 },
       },
     },
@@ -115,12 +120,12 @@
       rtiStressMin: 0.01,
       depositYield: 0.025, // 보증금 간주이자율(평균 예금금리). 금융기관마다 다름 (확인 필요)
       // 주택매매·임대사업자 주택담보대출: 2025.9.7 가계부채 보강안으로 수도권·규제지역 LTV 0%(금지).
-      // 지방은 종전 60% 기준 (2차 자료, 확인 필요). 비주택은 비주택담보대출 LTV(70%, 비주택 포함 토허구역 40%)를
+      // 지방은 종전 60% 유지 (9.7 보강안 보도참고자료 표 확인). 비주택은 비주택담보대출 LTV(70%, 비주택 포함 토허구역 40%)를
       // 쓰되, 사업자대출에 이 상한이 그대로 적용되는지는 공식 문서로 확인하지 못했다 (은행 내부 담보인정비율, 확인 필요).
       // 예외(2026.8.13 주택 신속공급 방안): 준공 1년 이내 신축 일반주택(비아파트) 최초 매입은 규제지역 30%·비규제 60%,
       // 등록임대사업자는 지역 무관 60%. 기존 주택은 여전히 0%라 계산에는 넣지 않고 화면에서 안내만 한다.
       housingLtvLocal: 0.60,
-      newBuildLtv: { regulated: 0.30, other: 0.60, registered: 0.60 }, // 8.13 신축 비아파트 예외 (시행일 확인 필요)
+      newBuildLtv: { regulated: 0.30, other: 0.60, registered: 0.60 }, // 8.13 신축 비아파트 예외 (2026.8.31 시행 보도, 금융위 원문 미확인)
       partialAmortizationYears: 10, // 유효담보가액 초과분은 매년 1/10 이상 분할상환
     },
 
@@ -132,7 +137,8 @@
     acquisitionTax: { nonHousing: 0.046, housing: 0.011 },
 
     staleAfterMonths: 6, // 규정 기준일에서 이만큼 지나면 화면에 '규정 확인' 경고
-    maxLoanYears: 40, // 역산 표시에 쓰는 최장 만기. 은행·지역에 따라 30년으로 제한하기도 함 (확인 필요)
+    // 역산 표시에 쓰는 최장 만기. 수도권·규제지역 주담대는 6.27 대책으로 30년 이내(2025.6.28~), 지방은 은행 자율(보통 40년)
+    maxLoanYears: { regulated: 30, unregulatedCapital: 30, local: 40 },
 
     // 대출 불가·경고 조건
     jeonseLoanBlockApartmentPrice: 300000000, // 규제지역 이 금액 초과 아파트 구입 + 전세대출 보유 → 불가
